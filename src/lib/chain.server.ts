@@ -170,12 +170,34 @@ async function fetchHyperionHolders(code: string, symbol: string): Promise<[Hold
   return [result, "hyperion"];
 }
 
-async function fetchScopeHolders(code: string): Promise<Holder[]> {
-  const holders: Holder[] = [];
-  let lower = "";
-  while (holders.length < MAX_HOLDERS) {
+/** Fetch the balance string for one scope of a token accounts table. */
+async function fetchScopeBalance(code: string, scope: string): Promise<Holder | null> {
+  try {
     const data = await chainPost<{
-      rows?: Array<{ scope?: string; balance?: string }>;
+      rows?: Array<{ balance?: string }>;
+    }>("/v1/chain/get_table_rows", {
+      code,
+      scope,
+      table: "accounts",
+      json: true,
+      limit: 1,
+    });
+    const raw = data.rows?.[0]?.balance;
+    const amount = raw ? parseFloat(raw) : 0;
+    if (raw && amount > 0) return { account: scope, weight: amount, raw };
+  } catch {
+    // skip scopes that fail (endpoint hiccup) rather than aborting the whole sweep
+  }
+  return null;
+}
+
+async function fetchScopeHolders(code: string): Promise<Holder[]> {
+  // Pass 1: enumerate account scopes (no balances in this response).
+  const scopes: string[] = [];
+  let lower = "";
+  while (scopes.length < MAX_HOLDERS) {
+    const data = await chainPost<{
+      rows?: Array<{ scope?: string }>;
       more?: string | boolean;
     }>("/v1/chain/get_table_by_scope", {
       code,
@@ -186,16 +208,25 @@ async function fetchScopeHolders(code: string): Promise<Holder[]> {
     const rows = data.rows ?? [];
     if (rows.length === 0) break;
     for (const row of rows) {
-      const account = row.scope ?? "";
-      const amount = parseFloat(row.balance ?? "0");
-      if (account && amount > 0) holders.push({ account, weight: amount, raw: row.balance ?? "0" });
+      const scope = row.scope ?? "";
+      if (scope) scopes.push(scope);
     }
     const more = data.more;
     if (!more || typeof more !== "string") break;
     lower = more;
   }
-  if (holders.length === 0) throw new Error(`No holders found for ${code}`);
-  // Scopes give balances per row on most nodes; treat as having balances if raw parsed.
+  if (scopes.length === 0) throw new Error(`No holders found for ${code}`);
+
+  // Pass 2: fetch balances concurrently in bounded batches.
+  const holders: Holder[] = [];
+  const BATCH = 25;
+  for (let i = 0; i < scopes.length && holders.length < MAX_HOLDERS; i += BATCH) {
+    const results = await Promise.all(
+      scopes.slice(i, i + BATCH).map((scope) => fetchScopeBalance(code, scope)),
+    );
+    for (const h of results) if (h) holders.push(h);
+  }
+  if (holders.length === 0) throw new Error(`No holders with balance found for ${code}`);
   return holders;
 }
 

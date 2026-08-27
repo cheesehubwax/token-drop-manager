@@ -332,20 +332,33 @@ export async function getWalletTokens(account: string): Promise<WalletToken[]> {
   });
 }
 
+/** Parse an asset string ("1.23456789 WAX") into integer units of 1e-8. */
+function assetToUnits(asset: string | undefined, precision = 8): number {
+  if (!asset) return 0;
+  const amount = parseFloat(asset.split(" ")[0] ?? "0");
+  if (!isFinite(amount)) return 0;
+  return Math.round(amount * 10 ** precision);
+}
+
 export async function getAccountResources(account: string): Promise<AccountResources> {
   const data = await chainPost<{
     cpu_limit?: { used?: number; available?: number; max?: number };
     net_limit?: { used?: number; available?: number; max?: number };
     ram_usage?: number;
     ram_quota?: number;
-    refund_request?: { cpu_amount?: string; net_amount?: string };
+    total_resources?: { cpu_weight?: string | number; net_weight?: string | number };
+    self_delegated_bandwidth?: { cpu_weight?: string; net_weight?: string };
   }>("/v1/chain/get_account", { account_name: account });
 
   const cpu = data.cpu_limit ?? {};
   const net = data.net_limit ?? {};
   const ramQuota = data.ram_quota ?? 0;
   const ramUsed = data.ram_usage ?? 0;
-  const refund = data.refund_request ?? {};
+  const totals = data.total_resources ?? {};
+  const cpuWeightUnits =
+    typeof totals.cpu_weight === "number" ? totals.cpu_weight : assetToUnits(totals.cpu_weight);
+  const netWeightUnits =
+    typeof totals.net_weight === "number" ? totals.net_weight : assetToUnits(totals.net_weight);
   return {
     account,
     cpuUsedUs: cpu.used ?? 0,
@@ -359,9 +372,11 @@ export async function getAccountResources(account: string): Promise<AccountResou
     ramAvailableBytes: Math.max(0, ramQuota - ramUsed),
     refundCpuUs: 0,
     refundNetBytes: 0,
-    ...(refund.cpu_amount ? {} : {}),
+    cpuWeightUnits,
+    netWeightUnits,
   };
 }
+
 
 export async function getRamPrice(): Promise<RamPrice> {
   const data = await chainPost<{

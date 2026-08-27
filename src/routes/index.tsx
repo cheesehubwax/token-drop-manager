@@ -32,20 +32,15 @@ import {
   txLink,
 } from "@/lib/cheese";
 import {
-  bytesPerCheese,
   ceilCheese,
   cheeseForBytes,
   cheeseForCpuUs,
-  cpuUsPerCheese,
   formatCheese,
-  netBytesPerCheese,
-  planTotal,
   splitPurchases,
   weightCalibration,
   type ResourcePricing,
 } from "@/lib/resources";
 import type { Session } from "@wharfkit/session";
-
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -93,7 +88,6 @@ const RAM_BYTES_PER_ROW = 276;
 
 const ACCOUNT_RE = /^[a-z1-5.]{1,12}$/;
 
-
 function shortError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const detail = msg.match(/"message":"([^"]+)"/)?.[1];
@@ -136,19 +130,13 @@ function AirdropPage() {
   const [resources, setResources] = useState<AccountResourceView | null>(null);
   const [ramPrice, setRamPrice] = useState<{ waxPerKb: number; waxPerNewRow: number } | null>(null);
 
-  // CHEESE resource purchases
+  // CHEESE resource purchases (handled automatically when the airdrop runs)
   const [cheeseBalance, setCheeseBalance] = useState<number | null>(null);
   const [pricing, setPricing] = useState<ResourcePricing | null>(null);
-  const [cpuPercent, setCpuPercent] = useState(DEFAULT_CPU_PERCENT);
-  const [cpuCheese, setCpuCheese] = useState("");
-  const [ramCheese, setRamCheese] = useState("");
-  const [cpuTouched, setCpuTouched] = useState(false);
-  const [ramTouched, setRamTouched] = useState(false);
-  const [topUpFirst, setTopUpFirst] = useState(false);
+  const cpuPercent = DEFAULT_CPU_PERCENT;
   const [purchaseLog, setPurchaseLog] = useState<
     Array<{ kind: "cpu" | "ram"; cheese: number; txId?: string; error?: string }>
   >([]);
-  const resourceSectionRef = useRef<HTMLElement | null>(null);
 
   // Run state
   const [busy, setBusy] = useState<string | null>(null);
@@ -218,7 +206,6 @@ function AirdropPage() {
       .then(setPricing)
       .catch(() => setPricing(null));
   }, [actor, refreshAccount]);
-
 
   // Fetch token stat whenever send token changes
   useEffect(() => {
@@ -350,11 +337,7 @@ function AirdropPage() {
   const total = useMemo(() => totalUnits(recipients), [recipients]);
   const estimate = useMemo(
     () =>
-      estimateResources(
-        recipients.length,
-        Math.max(1, batchSize),
-        ramPrice?.waxPerNewRow ?? 0.028,
-      ),
+      estimateResources(recipients.length, Math.max(1, batchSize), ramPrice?.waxPerNewRow ?? 0.028),
     [recipients.length, batchSize, ramPrice],
   );
   const warnings = useMemo(
@@ -392,7 +375,9 @@ function AirdropPage() {
 
   const suggestedCpuCheese = useMemo(
     () =>
-      pricing && cpuShortUs > 0 ? cheeseForCpuUs(cpuShortUs, pricing, calibration, cpuPercent) : null,
+      pricing && cpuShortUs > 0
+        ? cheeseForCpuUs(cpuShortUs, pricing, calibration, cpuPercent)
+        : null,
     [pricing, cpuShortUs, calibration, cpuPercent],
   );
   const suggestedRamCheese = useMemo(() => {
@@ -402,32 +387,6 @@ function AirdropPage() {
     return ceilCheese(Math.max(needed, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
 
-  // Prefill the purchase inputs with the suggested amounts until the user edits them.
-  useEffect(() => {
-    if (cpuTouched) return;
-    setCpuCheese(suggestedCpuCheese ? formatCheese(suggestedCpuCheese) : "");
-  }, [suggestedCpuCheese, cpuTouched]);
-  useEffect(() => {
-    if (ramTouched) return;
-    setRamCheese(suggestedRamCheese ? formatCheese(suggestedRamCheese) : "");
-  }, [suggestedRamCheese, ramTouched]);
-
-  const cpuCheeseNum = parseFloat(cpuCheese);
-  const ramCheeseNum = parseFloat(ramCheese);
-  const cpuQuote =
-    pricing && isFinite(cpuCheeseNum) && cpuCheeseNum > 0
-      ? {
-          us: (cpuUsPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
-          netBytes: (netBytesPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
-        }
-      : null;
-  const ramPlan =
-    pricing && isFinite(ramCheeseNum) && ramCheeseNum > 0
-      ? splitPurchases(ramCheeseNum, pricing.ram.minCheese, pricing.ram.maxCheese)
-      : [];
-  const ramQuoteBytes =
-    pricing && ramPlan.length > 0 ? (bytesPerCheese(pricing) ?? 0) * planTotal(ramPlan) : null;
-
   /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
   const buyWithCheese = useCallback(
     async (kind: "cpu" | "ram", amounts: number[]): Promise<boolean> => {
@@ -435,7 +394,9 @@ function AirdropPage() {
       if (!wallet || !sessionInfo || amounts.length === 0) return false;
       const to = kind === "cpu" ? CHEESE_CPU_CONTRACT : CHEESE_RAM_CONTRACT;
       const memoText =
-        kind === "cpu" ? powerupMemo(sessionInfo.actor, cpuPercent) : ramMemo(sessionInfo.actor, true);
+        kind === "cpu"
+          ? powerupMemo(sessionInfo.actor, cpuPercent)
+          : ramMemo(sessionInfo.actor, true);
       setBusy(kind === "cpu" ? "buy-cpu" : "buy-ram");
       let ok = true;
       try {
@@ -469,14 +430,21 @@ function AirdropPage() {
 
   const runAirdrop = async () => {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
+    setBatchLog([]);
+    setPurchaseLog([]);
 
-    // Optional: buy the missing CPU/RAM with CHEESE before the first batch.
-    if (topUpFirst && pricing) {
-      if (suggestedCpuCheese) {
+    // Resources are handled for the user: buy exactly what the drop is short of,
+    // with CHEESE, as separate transactions before the first batch.
+    if (pricing) {
+      if (suggestedCpuCheese && (cheeseBalance === null || cheeseBalance >= suggestedCpuCheese)) {
         const ok = await buyWithCheese("cpu", [suggestedCpuCheese]);
         if (!ok) return;
       }
-      if (suggestedRamCheese) {
+      if (
+        suggestedRamCheese &&
+        pricing.ram.enabled &&
+        (cheeseBalance === null || cheeseBalance >= suggestedRamCheese)
+      ) {
         const ok = await buyWithCheese(
           "ram",
           splitPurchases(suggestedRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
@@ -524,7 +492,6 @@ function AirdropPage() {
     void refreshAccount(sessionInfo.actor);
   };
 
-
   const downloadCsv = useCallback(() => {
     const lines = ["account,amount,token,memo"];
     for (const r of recipients) {
@@ -549,7 +516,6 @@ function AirdropPage() {
     busy === null &&
     tokenStat !== null;
 
-
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -558,7 +524,8 @@ function AirdropPage() {
             WAX <span className="text-primary">Airdrop</span> Tool
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Snapshot token or NFT holders, configure the drop, sign batched transfers from your wallet.
+            Snapshot token or NFT holders, configure the drop, sign batched transfers from your
+            wallet.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -622,9 +589,7 @@ function AirdropPage() {
             ) : (
               sendContract &&
               sendSymbol && (
-                <p className="mt-2 text-xs text-destructive">
-                  Token not found on {sendContract}.
-                </p>
+                <p className="mt-2 text-xs text-destructive">Token not found on {sendContract}.</p>
               )
             )}
             {walletTokens.length > 0 && (
@@ -814,283 +779,6 @@ function AirdropPage() {
               </label>
             </div>
           </section>
-
-          {/* Resources & cost */}
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              4 · Cost check
-            </h2>
-            {resources ? (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs">
-                <dt className="text-muted-foreground">CPU available</dt>
-                <dd className="text-right text-foreground">
-                  {(resources.cpuAvailableUs / 1000).toFixed(1)} / {(resources.cpuMaxUs / 1000).toFixed(1)} ms
-                </dd>
-                <dt className="text-muted-foreground">NET available</dt>
-                <dd className="text-right text-foreground">
-                  {(resources.netAvailableBytes / 1024).toFixed(1)} KB
-                </dd>
-                <dt className="text-muted-foreground">RAM free</dt>
-                <dd className="text-right text-foreground">
-                  {(resources.ramAvailableBytes / 1024).toFixed(1)} / {(resources.ramQuotaBytes / 1024).toFixed(1)} KB
-                </dd>
-                {ramPrice && (
-                  <>
-                    <dt className="text-muted-foreground">RAM price</dt>
-                    <dd className="text-right text-foreground">{ramPrice.waxPerKb.toFixed(3)} WAX/KB</dd>
-                  </>
-                )}
-                <dt className="text-muted-foreground">Est. CPU / tx</dt>
-                <dd className="text-right text-foreground">~{(estimate.cpuPerTxUs / 1000).toFixed(1)} ms</dd>
-                <dt className="text-muted-foreground">Worst-case RAM cost</dt>
-                <dd className="text-right text-foreground">
-                  ~{estimate.maxRamCostWax.toFixed(2)} WAX ({estimate.maxNewRows} new rows)
-                </dd>
-              </dl>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Connect your wallet to check CPU / NET / RAM headroom.
-              </p>
-            )}
-            <div className="mt-3 space-y-1">
-              {warnings.map((w, i) => (
-                <p
-                  key={i}
-                  className={`text-xs ${w.level === "error" ? "text-destructive" : "text-yellow-500"}`}
-                >
-                  {w.level === "error" ? "✕" : "⚠"} {w.message}
-                </p>
-              ))}
-              {(cpuShortUs > 0 || ramShortBytes > 0) && (
-                <button
-                  onClick={() =>
-                    resourceSectionRef.current?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "center",
-                    })
-                  }
-                  className="mt-1 rounded border border-primary/60 bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-                >
-                  Buy with {CHEESE_SYMBOL} ↓
-                </button>
-              )}
-            </div>
-          </section>
-
-          {/* CHEESE resource purchases */}
-          <section
-            ref={resourceSectionRef}
-            className="rounded-lg border border-border bg-card p-4"
-          >
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              5 · Buy resources with {CHEESE_SYMBOL}
-            </h2>
-            <p className="mb-3 text-xs text-muted-foreground">
-              CPU/NET through{" "}
-              <span className="font-mono text-foreground">{CHEESE_CPU_CONTRACT}</span>, RAM through{" "}
-              <span className="font-mono text-foreground">{CHEESE_RAM_CONTRACT}</span>. Paid in{" "}
-              {CHEESE_SYMBOL}, signed by your wallet. Returns are estimates — prices move between
-              quote and transaction.
-            </p>
-
-            {!sessionInfo ? (
-              <p className="text-xs text-muted-foreground">
-                Connect your wallet to buy CPU, NET or RAM with {CHEESE_SYMBOL}.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs">
-                  <dt className="text-muted-foreground">Your {CHEESE_SYMBOL}</dt>
-                  <dd className="text-right text-primary">
-                    {cheeseBalance === null ? "—" : formatCheese(cheeseBalance)}
-                  </dd>
-                  {pricing && (
-                    <>
-                      <dt className="text-muted-foreground">
-                        {CHEESE_SYMBOL} price ({pricing.priceSource})
-                      </dt>
-                      <dd className="text-right text-foreground">
-                        {pricing.waxPerCheese.toFixed(4)} WAX
-                      </dd>
-                      <dt className="text-muted-foreground">RAM per {CHEESE_SYMBOL}</dt>
-                      <dd className="text-right text-foreground">
-                        ~{((bytesPerCheese(pricing) ?? 0) / 1024).toFixed(2)} KB
-                      </dd>
-                    </>
-                  )}
-                  {cpuShortUs > 0 && (
-                    <>
-                      <dt className="text-yellow-500">CPU short by</dt>
-                      <dd className="text-right text-yellow-500">
-                        {(cpuShortUs / 1000).toFixed(1)} ms
-                      </dd>
-                    </>
-                  )}
-                  {ramShortBytes > 0 && (
-                    <>
-                      <dt className="text-yellow-500">RAM short by</dt>
-                      <dd className="text-right text-yellow-500">
-                        {(ramShortBytes / 1024).toFixed(1)} KB
-                      </dd>
-                    </>
-                  )}
-                </dl>
-
-                {!pricing && (
-                  <p className="text-xs text-yellow-500">
-                    ⚠ Live pricing unavailable — you can still buy, but the estimated return is not
-                    shown.
-                  </p>
-                )}
-
-                {/* CPU / NET */}
-                <div className="rounded-md border border-border bg-background p-3">
-                  <div className="mb-2 flex items-baseline justify-between">
-                    <span className="text-xs font-semibold text-foreground">CPU / NET powerup</span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {CHEESE_CPU_CONTRACT}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label>
-                      <span className="mb-1 block text-xs text-muted-foreground">
-                        {CHEESE_SYMBOL} to spend
-                      </span>
-                      <input
-                        value={cpuCheese}
-                        onChange={(e) => {
-                          setCpuTouched(true);
-                          setCpuCheese(e.target.value);
-                        }}
-                        placeholder="1.0000"
-                        className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
-                      />
-                    </label>
-                    <label>
-                      <span className="mb-1 block text-xs text-muted-foreground">
-                        CPU split ({cpuPercent}% CPU / {100 - cpuPercent}% NET)
-                      </span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={cpuPercent}
-                        onChange={(e) => setCpuPercent(parseInt(e.target.value, 10))}
-                        className="mt-2 w-full accent-primary"
-                      />
-                    </label>
-                  </div>
-                  {cpuQuote && (
-                    <p className="mt-2 font-mono text-xs text-primary">
-                      ≈ {(cpuQuote.us / 1000).toFixed(1)} ms CPU
-                      {cpuQuote.netBytes > 0 && ` · ≈ ${(cpuQuote.netBytes / 1024).toFixed(1)} KB NET`}
-                      {pricing?.powerup && ` · ${pricing.powerup.powerupDays}d`}
-                    </p>
-                  )}
-                  <button
-                    onClick={() => void buyWithCheese("cpu", [ceilCheese(cpuCheeseNum)])}
-                    disabled={
-                      busy !== null ||
-                      !isFinite(cpuCheeseNum) ||
-                      cpuCheeseNum <= 0 ||
-                      (cheeseBalance !== null && cpuCheeseNum > cheeseBalance)
-                    }
-                    className="mt-2 rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                  >
-                    {busy === "buy-cpu" ? "Signing…" : `Buy CPU/NET with ${CHEESE_SYMBOL}`}
-                  </button>
-                </div>
-
-                {/* RAM */}
-                <div className="rounded-md border border-border bg-background p-3">
-                  <div className="mb-2 flex items-baseline justify-between">
-                    <span className="text-xs font-semibold text-foreground">RAM</span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {CHEESE_RAM_CONTRACT}
-                    </span>
-                  </div>
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-muted-foreground">
-                      {CHEESE_SYMBOL} to spend
-                      {pricing &&
-                        ` (min ${formatCheese(pricing.ram.minCheese)}, max ${formatCheese(
-                          pricing.ram.maxCheese,
-                        )} per purchase)`}
-                    </span>
-                    <input
-                      value={ramCheese}
-                      onChange={(e) => {
-                        setRamTouched(true);
-                        setRamCheese(e.target.value);
-                      }}
-                      placeholder={pricing ? formatCheese(pricing.ram.minCheese) : "1.0000"}
-                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
-                    />
-                  </label>
-                  {ramQuoteBytes !== null && (
-                    <p className="mt-2 font-mono text-xs text-primary">
-                      ≈ {(ramQuoteBytes / 1024).toFixed(2)} KB RAM
-                      {ramPlan.length > 1 && ` · ${ramPlan.length} purchases`}
-                      {` · total ${formatCheese(planTotal(ramPlan))} ${CHEESE_SYMBOL}`}
-                    </p>
-                  )}
-                  {pricing && !pricing.ram.enabled && (
-                    <p className="mt-2 text-xs text-destructive">
-                      ✕ RAM buying is currently disabled on {CHEESE_RAM_CONTRACT}.
-                    </p>
-                  )}
-                  <button
-                    onClick={() => void buyWithCheese("ram", ramPlan)}
-                    disabled={
-                      busy !== null ||
-                      ramPlan.length === 0 ||
-                      (pricing !== null && !pricing.ram.enabled) ||
-                      (cheeseBalance !== null && planTotal(ramPlan) > cheeseBalance)
-                    }
-                    className="mt-2 rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                  >
-                    {busy === "buy-ram" ? "Signing…" : `Buy RAM with ${CHEESE_SYMBOL}`}
-                  </button>
-                </div>
-
-                {purchaseLog.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-xs">
-                    {purchaseLog.map((p, i) => (
-                      <div key={i} className="flex items-start gap-2 py-0.5">
-                        {p.txId ? (
-                          <>
-                            <span className="text-primary">✓</span>
-                            <span className="text-muted-foreground">
-                              {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
-                              {CHEESE_SYMBOL} ·{" "}
-                            </span>
-                            <a
-                              href={txLink(p.txId)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="truncate text-primary underline"
-                            >
-                              {p.txId.slice(0, 16)}…
-                            </a>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-destructive">✕</span>
-                            <span className="text-destructive">
-                              {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
-                              {CHEESE_SYMBOL} · {p.error}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
         </div>
 
         {/* RIGHT: holders + run */}
@@ -1136,7 +824,9 @@ function AirdropPage() {
                   <thead className="sticky top-0 bg-secondary">
                     <tr>
                       <th className="px-3 py-2 text-xs font-medium text-muted-foreground">#</th>
-                      <th className="px-3 py-2 text-xs font-medium text-muted-foreground">Account</th>
+                      <th className="px-3 py-2 text-xs font-medium text-muted-foreground">
+                        Account
+                      </th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                         {snapshotMode === "nft" ? "NFTs" : "Balance"}
                       </th>
@@ -1185,7 +875,8 @@ function AirdropPage() {
                 </table>
                 {filteredHolders.length > 500 && (
                   <p className="bg-secondary px-3 py-2 text-xs text-muted-foreground">
-                    Showing first 500 rows — all {filteredHolders.length.toLocaleString()} selected accounts are still included in the drop.
+                    Showing first 500 rows — all {filteredHolders.length.toLocaleString()} selected
+                    accounts are still included in the drop.
                   </p>
                 )}
               </div>
@@ -1218,37 +909,32 @@ function AirdropPage() {
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Est. total CPU</dt>
-                <dd className="text-lg text-foreground">~{(estimate.totalCpuUs / 1000).toFixed(0)} ms</dd>
+                <dd className="text-lg text-foreground">
+                  ~{(estimate.totalCpuUs / 1000).toFixed(0)} ms
+                </dd>
               </div>
             </dl>
-            {(suggestedCpuCheese || suggestedRamCheese) && (
-              <label className="mb-3 flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2 text-xs text-foreground">
-                <input
-                  type="checkbox"
-                  checked={topUpFirst}
-                  onChange={(e) => setTopUpFirst(e.target.checked)}
-                  className="mt-0.5 accent-primary"
-                />
-                <span>
-                  Top up resources with {CHEESE_SYMBOL} before sending
-                  {suggestedCpuCheese &&
-                    ` · CPU/NET ${formatCheese(suggestedCpuCheese)} ${CHEESE_SYMBOL}`}
-                  {suggestedRamCheese && ` · RAM ${formatCheese(suggestedRamCheese)} ${CHEESE_SYMBOL}`}
-                  <span className="block text-muted-foreground">
-                    Signed as separate transactions before the first airdrop batch.
-                  </span>
-                </span>
-              </label>
+            {warnings.filter((w) => w.level === "error").length > 0 && (
+              <div className="mb-3 space-y-1">
+                {warnings
+                  .filter((w) => w.level === "error")
+                  .map((w, i) => (
+                    <p key={i} className="text-xs text-destructive">
+                      ✕ {w.message}
+                    </p>
+                  ))}
+              </div>
             )}
-            <div className="flex flex-wrap gap-2">
 
+            <div className="flex flex-wrap gap-2">
               {runState !== "running" ? (
                 <button
                   onClick={runAirdrop}
                   disabled={!canRun}
                   className="rounded-md bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-40"
                 >
-                  AIRDROP {recipients.length > 0 && `(${recipients.length.toLocaleString()} recipients)`}
+                  AIRDROP{" "}
+                  {recipients.length > 0 && `(${recipients.length.toLocaleString()} recipients)`}
                 </button>
               ) : (
                 <button
@@ -1275,6 +961,46 @@ function AirdropPage() {
               <p className="mt-2 text-xs text-muted-foreground">
                 Connect your wallet to enable the airdrop.
               </p>
+            )}
+            {sessionInfo && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                CPU, NET and RAM are topped up automatically with {CHEESE_SYMBOL} when needed — you
+                may be asked to sign those purchases before the first batch.
+              </p>
+            )}
+
+            {purchaseLog.length > 0 && (
+              <div className="mt-4 max-h-40 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-xs">
+                {purchaseLog.map((p, i) => (
+                  <div key={i} className="flex items-start gap-2 py-0.5">
+                    {p.txId ? (
+                      <>
+                        <span className="text-primary">✓</span>
+                        <span className="text-muted-foreground">
+                          {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
+                          {CHEESE_SYMBOL} ·{" "}
+                        </span>
+                        <a
+                          href={txLink(p.txId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate text-primary underline"
+                        >
+                          {p.txId.slice(0, 16)}…
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-destructive">✕</span>
+                        <span className="text-destructive">
+                          {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
+                          {CHEESE_SYMBOL} · {p.error}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
 
             {batchLog.length > 0 && (
@@ -1308,8 +1034,9 @@ function AirdropPage() {
                 ))}
                 {runState === "done" && (
                   <div className="mt-1 border-t border-border pt-1 text-foreground">
-                    Done · {batchLog.filter((b) => b.txId).length}/{estimate.txCount} batches succeeded.
-                    Failed batches can be re-sent by pressing Airdrop again after fixing the issue.
+                    Done · {batchLog.filter((b) => b.txId).length}/{estimate.txCount} batches
+                    succeeded. Failed batches can be re-sent by pressing Airdrop again after fixing
+                    the issue.
                   </div>
                 )}
               </div>

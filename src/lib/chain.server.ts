@@ -31,7 +31,11 @@ const FETCH_TIMEOUT_MS = 15_000;
 /** AtomicAssets holder queries can be slow on first touch — allow longer. */
 const AA_TIMEOUT_MS = 30_000;
 
-async function fetchJson(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -128,7 +132,6 @@ export interface RamPrice {
   waxPerNewRow: number;
 }
 
-
 // ---------------------------------------------------------------------------
 // Token holders (Hyperion, paginated, with get_table_by_scope fallback)
 // ---------------------------------------------------------------------------
@@ -148,7 +151,12 @@ export async function getTokenHolders(code: string, symbol: string): Promise<Hol
   } catch {
     // Hyperion unavailable everywhere — fall back to scope listing (no balances).
     const holders = await fetchScopeHolders(code);
-    return { holders, truncated: holders.length >= MAX_HOLDERS, source: "chain-fallback", hasBalances: false };
+    return {
+      holders,
+      truncated: holders.length >= MAX_HOLDERS,
+      source: "chain-fallback",
+      hasBalances: false,
+    };
   }
 }
 
@@ -280,7 +288,12 @@ export async function getNftHolders(
     if (out.length === 0) throw new Error(`No holders found for collection ${collection}`);
     return out;
   });
-  return { holders, truncated: holders.length >= MAX_HOLDERS, source: "atomicassets", hasBalances: true };
+  return {
+    holders,
+    truncated: holders.length >= MAX_HOLDERS,
+    source: "atomicassets",
+    hasBalances: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -323,9 +336,7 @@ export async function getExistingTokenRows(
             { code, scope: account, table: "accounts", json: true, limit: 20 },
           );
           const rows = data.rows ?? [];
-          const has = rows.some(
-            (r) => (r.balance ?? "").split(" ")[1]?.toUpperCase() === upper,
-          );
+          const has = rows.some((r) => (r.balance ?? "").split(" ")[1]?.toUpperCase() === upper);
           return { account, state: has ? "existing" : "missing" } as const;
         } catch {
           return { account, state: "unknown" } as const;
@@ -339,7 +350,6 @@ export async function getExistingTokenRows(
   }
   return { existing, unknown };
 }
-
 
 interface HyperionTokensResponse {
   tokens?: Array<{ symbol?: string; contract?: string; amount?: number; precision?: number }>;
@@ -421,7 +431,6 @@ export async function getAccountResources(account: string): Promise<AccountResou
     netWeightUnits,
   };
 }
-
 
 export async function getRamPrice(): Promise<RamPrice> {
   const data = await chainPost<{
@@ -595,7 +604,7 @@ export async function getResourcePricing(): Promise<ResourcePricing> {
   let waxPerCheese = spot ?? reference;
   let priceSource: ResourcePricing["priceSource"] = spot ? "pool" : "reference";
   if (spot && reference > 0) {
-    const deviation = Math.abs(spot - reference) / reference * 100;
+    const deviation = (Math.abs(spot - reference) / reference) * 100;
     if (deviation > maxDeviation) {
       waxPerCheese = reference;
       priceSource = "reference";

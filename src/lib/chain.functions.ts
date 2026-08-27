@@ -12,7 +12,6 @@ import {
   getWalletTokens,
 } from "./chain.server";
 
-
 export const fetchTokenHolders = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
@@ -48,15 +47,11 @@ export const fetchTokenStat = createServerFn({ method: "POST" })
   .handler(async ({ data }) => getTokenStat(data.code, data.symbol));
 
 export const fetchWalletTokens = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
-    z.object({ account: z.string().min(1).max(13) }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ account: z.string().min(1).max(13) }).parse(input))
   .handler(async ({ data }) => getWalletTokens(data.account));
 
 export const fetchAccountResources = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
-    z.object({ account: z.string().min(1).max(13) }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ account: z.string().min(1).max(13) }).parse(input))
   .handler(async ({ data }) => getAccountResources(data.account));
 
 export const fetchRamPrice = createServerFn({ method: "POST" })
@@ -64,9 +59,7 @@ export const fetchRamPrice = createServerFn({ method: "POST" })
   .handler(async () => getRamPrice());
 
 export const fetchCheeseBalance = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
-    z.object({ account: z.string().min(1).max(13) }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ account: z.string().min(1).max(13) }).parse(input))
   .handler(async ({ data }) => getCheeseBalance(data.account));
 
 export const fetchResourcePricing = createServerFn({ method: "POST" })

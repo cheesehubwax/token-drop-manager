@@ -21,7 +21,6 @@ export const ATOMIC_ENDPOINTS = [
   "https://wax.api.atomicassets.io",
   "https://atomic3.hivebp.io",
   "https://aa-wax-public1.neftyblocks.com",
-  "https://atomic.wax.eosusa.io",
   "https://aa.dapplica.io",
 ];
 

@@ -371,8 +371,120 @@ function AirdropPage() {
   );
   const hasError = warnings.some((w) => w.level === "error");
 
+  // ---- CHEESE resource purchases -----------------------------------------
+  const calibration = useMemo(
+    () =>
+      resources
+        ? weightCalibration(resources)
+        : { cpuUsPerWeightUnit: null, netBytesPerWeightUnit: null },
+    [resources],
+  );
+
+  /** CPU needed for one batch plus 20% headroom. */
+  const cpuNeededUs = estimate.cpuPerTxUs * 1.2;
+  const ramNeededBytes = estimate.maxNewRows * RAM_BYTES_PER_ROW;
+  const cpuShortUs =
+    resources && recipients.length > 0 ? Math.max(0, cpuNeededUs - resources.cpuAvailableUs) : 0;
+  const ramShortBytes =
+    resources && recipients.length > 0
+      ? Math.max(0, ramNeededBytes - resources.ramAvailableBytes)
+      : 0;
+
+  const suggestedCpuCheese = useMemo(
+    () =>
+      pricing && cpuShortUs > 0 ? cheeseForCpuUs(cpuShortUs, pricing, calibration, cpuPercent) : null,
+    [pricing, cpuShortUs, calibration, cpuPercent],
+  );
+  const suggestedRamCheese = useMemo(() => {
+    if (!pricing || ramShortBytes <= 0) return null;
+    const needed = cheeseForBytes(ramShortBytes, pricing);
+    if (needed === null) return null;
+    return ceilCheese(Math.max(needed, pricing.ram.minCheese));
+  }, [pricing, ramShortBytes]);
+
+  // Prefill the purchase inputs with the suggested amounts until the user edits them.
+  useEffect(() => {
+    if (cpuTouched) return;
+    setCpuCheese(suggestedCpuCheese ? formatCheese(suggestedCpuCheese) : "");
+  }, [suggestedCpuCheese, cpuTouched]);
+  useEffect(() => {
+    if (ramTouched) return;
+    setRamCheese(suggestedRamCheese ? formatCheese(suggestedRamCheese) : "");
+  }, [suggestedRamCheese, ramTouched]);
+
+  const cpuCheeseNum = parseFloat(cpuCheese);
+  const ramCheeseNum = parseFloat(ramCheese);
+  const cpuQuote =
+    pricing && isFinite(cpuCheeseNum) && cpuCheeseNum > 0
+      ? {
+          us: (cpuUsPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
+          netBytes: (netBytesPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
+        }
+      : null;
+  const ramPlan =
+    pricing && isFinite(ramCheeseNum) && ramCheeseNum > 0
+      ? splitPurchases(ramCheeseNum, pricing.ram.minCheese, pricing.ram.maxCheese)
+      : [];
+  const ramQuoteBytes =
+    pricing && ramPlan.length > 0 ? (bytesPerCheese(pricing) ?? 0) * planTotal(ramPlan) : null;
+
+  /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
+  const buyWithCheese = useCallback(
+    async (kind: "cpu" | "ram", amounts: number[]): Promise<boolean> => {
+      const wallet = walletRef.current;
+      if (!wallet || !sessionInfo || amounts.length === 0) return false;
+      const to = kind === "cpu" ? CHEESE_CPU_CONTRACT : CHEESE_RAM_CONTRACT;
+      const memoText =
+        kind === "cpu" ? powerupMemo(sessionInfo.actor, cpuPercent) : ramMemo(sessionInfo.actor, true);
+      setBusy(kind === "cpu" ? "buy-cpu" : "buy-ram");
+      let ok = true;
+      try {
+        for (let i = 0; i < amounts.length; i++) {
+          const cheese = amounts[i];
+          if (cheese === undefined || cheese <= 0) continue;
+          try {
+            const txId = await wallet.transferCheese(sessionInfo.session, {
+              to,
+              quantity: `${formatCheese(cheese)} ${CHEESE_SYMBOL}`,
+              memo: memoText,
+            });
+            setPurchaseLog((prev) => [...prev, { kind, cheese, txId }]);
+          } catch (err) {
+            ok = false;
+            setPurchaseLog((prev) => [...prev, { kind, cheese, error: shortError(err) }]);
+            break;
+          }
+          if (i < amounts.length - 1) await new Promise((r) => setTimeout(r, 1200));
+        }
+      } finally {
+        setBusy(null);
+      }
+      // Give the chain a moment to apply the powerup / RAM purchase, then re-read.
+      await new Promise((r) => setTimeout(r, 3000));
+      await refreshAccount(sessionInfo.actor);
+      return ok;
+    },
+    [sessionInfo, cpuPercent, refreshAccount],
+  );
+
   const runAirdrop = async () => {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
+
+    // Optional: buy the missing CPU/RAM with CHEESE before the first batch.
+    if (topUpFirst && pricing) {
+      if (suggestedCpuCheese) {
+        const ok = await buyWithCheese("cpu", [suggestedCpuCheese]);
+        if (!ok) return;
+      }
+      if (suggestedRamCheese) {
+        const ok = await buyWithCheese(
+          "ram",
+          splitPurchases(suggestedRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
+        );
+        if (!ok) return;
+      }
+    }
+
     setRunState("running");
     setBatchLog([]);
     setCancelRequested(false);
@@ -409,19 +521,9 @@ function AirdropPage() {
       if (i < batches.length - 1) await new Promise((r) => setTimeout(r, 1200));
     }
     setRunState("done");
-    // refresh resources after run
-    fetchAccountResources({ data: { account: sessionInfo.actor } })
-      .then((r) =>
-        setResources({
-          cpuAvailableUs: r.cpuAvailableUs,
-          netAvailableBytes: r.netAvailableBytes,
-          ramAvailableBytes: r.ramAvailableBytes,
-          cpuMaxUs: r.cpuMaxUs,
-          ramQuotaBytes: r.ramQuotaBytes,
-        }),
-      )
-      .catch(() => undefined);
+    void refreshAccount(sessionInfo.actor);
   };
+
 
   const downloadCsv = useCallback(() => {
     const lines = ["account,amount,token,memo"];

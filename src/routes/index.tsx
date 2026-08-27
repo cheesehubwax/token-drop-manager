@@ -1276,6 +1276,47 @@ function AirdropPage() {
                 Connect your wallet to enable the airdrop.
               </p>
             )}
+            {sessionInfo && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                CPU, NET and RAM are topped up automatically with {CHEESE_SYMBOL} when needed — you
+                may be asked to sign those purchases before the first batch.
+              </p>
+            )}
+
+            {purchaseLog.length > 0 && (
+              <div className="mt-4 max-h-40 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-xs">
+                {purchaseLog.map((p, i) => (
+                  <div key={i} className="flex items-start gap-2 py-0.5">
+                    {p.txId ? (
+                      <>
+                        <span className="text-primary">✓</span>
+                        <span className="text-muted-foreground">
+                          {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
+                          {CHEESE_SYMBOL} ·{" "}
+                        </span>
+                        <a
+                          href={txLink(p.txId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate text-primary underline"
+                        >
+                          {p.txId.slice(0, 16)}…
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-destructive">✕</span>
+                        <span className="text-destructive">
+                          {p.kind === "cpu" ? "CPU/NET" : "RAM"} · {formatCheese(p.cheese)}{" "}
+                          {CHEESE_SYMBOL} · {p.error}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
 
             {batchLog.length > 0 && (
               <div className="mt-4 max-h-64 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-xs">

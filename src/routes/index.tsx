@@ -391,6 +391,33 @@ function AirdropPage() {
     return ceilCheese(Math.max(needed, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
 
+  /** Current CHEESE prices: how much 1 ms of CPU / 1 KB of RAM costs right now. */
+  const cheesePerCpuMs = useMemo(() => {
+    if (!pricing) return null;
+    const per = cpuUsPerCheese(pricing, calibration, cpuPercent);
+    if (!per || per <= 0) return null;
+    return 1000 / per;
+  }, [pricing, calibration, cpuPercent]);
+  const cheesePerRamKb = useMemo(() => {
+    if (!pricing) return null;
+    const per = bytesPerCheese(pricing);
+    if (!per || per <= 0) return null;
+    return 1024 / per;
+  }, [pricing]);
+
+  /** Full estimated CHEESE cost of this airdrop's CPU and RAM needs. */
+  const estCpuCheese = useMemo(
+    () =>
+      pricing && recipients.length > 0
+        ? cheeseForCpuUs(cpuNeededUs, pricing, calibration, cpuPercent)
+        : null,
+    [pricing, cpuNeededUs, calibration, cpuPercent, recipients.length],
+  );
+  const estRamCheese = useMemo(
+    () => (pricing && ramNeededBytes > 0 ? cheeseForBytes(ramNeededBytes, pricing) : null),
+    [pricing, ramNeededBytes],
+  );
+
   /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
   const buyWithCheese = useCallback(
     async (kind: "cpu" | "ram", amounts: number[]): Promise<boolean> => {

@@ -77,7 +77,22 @@ interface SessionInfo {
   session: Session;
 }
 
+interface AccountResourceView {
+  cpuAvailableUs: number;
+  netAvailableBytes: number;
+  ramAvailableBytes: number;
+  cpuMaxUs: number;
+  netMaxBytes: number;
+  ramQuotaBytes: number;
+  cpuWeightUnits: number;
+  netWeightUnits: number;
+}
+
+/** RAM bytes a fresh token balance row costs the sender. */
+const RAM_BYTES_PER_ROW = 276;
+
 const ACCOUNT_RE = /^[a-z1-5.]{1,12}$/;
+
 
 function shortError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);

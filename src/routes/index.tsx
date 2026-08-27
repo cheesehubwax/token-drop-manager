@@ -118,14 +118,22 @@ function AirdropPage() {
   const [minWeight, setMinWeight] = useState("");
 
   // Resources
-  const [resources, setResources] = useState<{
-    cpuAvailableUs: number;
-    netAvailableBytes: number;
-    ramAvailableBytes: number;
-    cpuMaxUs: number;
-    ramQuotaBytes: number;
-  } | null>(null);
+  const [resources, setResources] = useState<AccountResourceView | null>(null);
   const [ramPrice, setRamPrice] = useState<{ waxPerKb: number; waxPerNewRow: number } | null>(null);
+
+  // CHEESE resource purchases
+  const [cheeseBalance, setCheeseBalance] = useState<number | null>(null);
+  const [pricing, setPricing] = useState<ResourcePricing | null>(null);
+  const [cpuPercent, setCpuPercent] = useState(DEFAULT_CPU_PERCENT);
+  const [cpuCheese, setCpuCheese] = useState("");
+  const [ramCheese, setRamCheese] = useState("");
+  const [cpuTouched, setCpuTouched] = useState(false);
+  const [ramTouched, setRamTouched] = useState(false);
+  const [topUpFirst, setTopUpFirst] = useState(false);
+  const [purchaseLog, setPurchaseLog] = useState<
+    Array<{ kind: "cpu" | "ram"; cheese: number; txId?: string; error?: string }>
+  >([]);
+  const resourceSectionRef = useRef<HTMLElement | null>(null);
 
   // Run state
   const [busy, setBusy] = useState<string | null>(null);
@@ -159,27 +167,43 @@ function AirdropPage() {
     };
   }, []);
 
+  const refreshAccount = useCallback(async (account: string) => {
+    await Promise.all([
+      fetchAccountResources({ data: { account } })
+        .then((r) =>
+          setResources({
+            cpuAvailableUs: r.cpuAvailableUs,
+            netAvailableBytes: r.netAvailableBytes,
+            ramAvailableBytes: r.ramAvailableBytes,
+            cpuMaxUs: r.cpuMaxUs,
+            netMaxBytes: r.netMaxBytes,
+            ramQuotaBytes: r.ramQuotaBytes,
+            cpuWeightUnits: r.cpuWeightUnits,
+            netWeightUnits: r.netWeightUnits,
+          }),
+        )
+        .catch(() => setResources(null)),
+      fetchCheeseBalance({ data: { account } })
+        .then(setCheeseBalance)
+        .catch(() => setCheeseBalance(null)),
+    ]);
+  }, []);
+
   // Load account data on login
   useEffect(() => {
     if (!actor) return;
     fetchWalletTokens({ data: { account: actor } })
       .then(setWalletTokens)
       .catch(() => setWalletTokens([]));
-    fetchAccountResources({ data: { account: actor } })
-      .then((r) =>
-        setResources({
-          cpuAvailableUs: r.cpuAvailableUs,
-          netAvailableBytes: r.netAvailableBytes,
-          ramAvailableBytes: r.ramAvailableBytes,
-          cpuMaxUs: r.cpuMaxUs,
-          ramQuotaBytes: r.ramQuotaBytes,
-        }),
-      )
-      .catch(() => setResources(null));
+    void refreshAccount(actor);
     fetchRamPrice({ data: {} })
       .then(setRamPrice)
       .catch(() => setRamPrice(null));
-  }, [actor]);
+    fetchResourcePricing({ data: {} })
+      .then(setPricing)
+      .catch(() => setPricing(null));
+  }, [actor, refreshAccount]);
+
 
   // Fetch token stat whenever send token changes
   useEffect(() => {

@@ -402,31 +402,8 @@ function AirdropPage() {
     return ceilCheese(Math.max(needed, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
 
-  // Prefill the purchase inputs with the suggested amounts until the user edits them.
-  useEffect(() => {
-    if (cpuTouched) return;
-    setCpuCheese(suggestedCpuCheese ? formatCheese(suggestedCpuCheese) : "");
-  }, [suggestedCpuCheese, cpuTouched]);
-  useEffect(() => {
-    if (ramTouched) return;
-    setRamCheese(suggestedRamCheese ? formatCheese(suggestedRamCheese) : "");
-  }, [suggestedRamCheese, ramTouched]);
 
-  const cpuCheeseNum = parseFloat(cpuCheese);
-  const ramCheeseNum = parseFloat(ramCheese);
-  const cpuQuote =
-    pricing && isFinite(cpuCheeseNum) && cpuCheeseNum > 0
-      ? {
-          us: (cpuUsPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
-          netBytes: (netBytesPerCheese(pricing, calibration, cpuPercent) ?? 0) * cpuCheeseNum,
-        }
-      : null;
-  const ramPlan =
-    pricing && isFinite(ramCheeseNum) && ramCheeseNum > 0
-      ? splitPurchases(ramCheeseNum, pricing.ram.minCheese, pricing.ram.maxCheese)
-      : [];
-  const ramQuoteBytes =
-    pricing && ramPlan.length > 0 ? (bytesPerCheese(pricing) ?? 0) * planTotal(ramPlan) : null;
+
 
   /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
   const buyWithCheese = useCallback(

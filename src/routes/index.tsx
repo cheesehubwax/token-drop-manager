@@ -342,15 +342,10 @@ function AirdropPage() {
   );
   const warnings = useMemo(
     () =>
-      resourceWarnings(
-        estimate,
-        resources,
-        senderBalanceUnits,
-        total,
-        precision,
-        sendSymbol.toUpperCase(),
-      ),
-    [estimate, resources, senderBalanceUnits, total, precision, sendSymbol],
+      // Resource shortfalls are handled automatically with CHEESE top-ups, so
+      // only the token balance is validated here.
+      resourceWarnings(estimate, null, senderBalanceUnits, total, precision, sendSymbol.toUpperCase()),
+    [estimate, senderBalanceUnits, total, precision, sendSymbol],
   );
   const hasError = warnings.some((w) => w.level === "error");
 

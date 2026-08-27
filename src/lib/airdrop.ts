@@ -144,19 +144,29 @@ export function estimateResources(
   recipientCount: number,
   batchSize: number,
   waxPerNewRow: number,
+  /**
+   * Recipients that actually need a new balance row. Omit (or pass null) while
+   * the on-chain check is pending to keep the conservative worst case.
+   */
+  newRowCount?: number | null,
 ): ResourceEstimate {
   const txCount = Math.max(1, Math.ceil(recipientCount / batchSize));
   const cpuPerTxUs = batchSize * CPU_US_PER_TRANSFER + CPU_US_TX_OVERHEAD;
   const netPerTxBytes = batchSize * NET_BYTES_PER_TRANSFER + NET_BYTES_TX_OVERHEAD;
+  const rows =
+    typeof newRowCount === "number"
+      ? Math.max(0, Math.min(recipientCount, Math.round(newRowCount)))
+      : recipientCount;
   return {
     cpuPerTxUs,
     netPerTxBytes,
     totalCpuUs: cpuPerTxUs * txCount,
-    maxNewRows: recipientCount,
-    maxRamCostWax: recipientCount * waxPerNewRow,
+    maxNewRows: rows,
+    maxRamCostWax: rows * waxPerNewRow,
     txCount,
   };
 }
+
 
 export interface ResourceWarning {
   level: "warn" | "error";

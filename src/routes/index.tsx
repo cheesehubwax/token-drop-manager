@@ -990,7 +990,9 @@ function AirdropPage() {
                 {suggestedCpuCheese !== null || suggestedRamCheese !== null
                   ? ` — about ${formatCheese((suggestedCpuCheese ?? 0) + (suggestedRamCheese ?? 0))} ${CHEESE_SYMBOL} right now.`
                   : " — your account currently has enough CPU, NET and RAM."}
-                {cheeseBalance !== null ? ` Your balance: ${cheeseBalance}.` : ""}
+                {cheeseBalance !== null
+                  ? ` Your balance: ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`
+                  : ""}
               </p>
             </div>
 

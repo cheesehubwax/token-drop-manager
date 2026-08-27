@@ -1221,7 +1221,27 @@ function AirdropPage() {
                 <dd className="text-lg text-foreground">~{(estimate.totalCpuUs / 1000).toFixed(0)} ms</dd>
               </div>
             </dl>
+            {(suggestedCpuCheese || suggestedRamCheese) && (
+              <label className="mb-3 flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={topUpFirst}
+                  onChange={(e) => setTopUpFirst(e.target.checked)}
+                  className="mt-0.5 accent-primary"
+                />
+                <span>
+                  Top up resources with {CHEESE_SYMBOL} before sending
+                  {suggestedCpuCheese &&
+                    ` · CPU/NET ${formatCheese(suggestedCpuCheese)} ${CHEESE_SYMBOL}`}
+                  {suggestedRamCheese && ` · RAM ${formatCheese(suggestedRamCheese)} ${CHEESE_SYMBOL}`}
+                  <span className="block text-muted-foreground">
+                    Signed as separate transactions before the first airdrop batch.
+                  </span>
+                </span>
+              </label>
+            )}
             <div className="flex flex-wrap gap-2">
+
               {runState !== "running" ? (
                 <button
                   onClick={runAirdrop}

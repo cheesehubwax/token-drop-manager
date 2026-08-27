@@ -470,13 +470,18 @@ function AirdropPage() {
   const runAirdrop = async () => {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
 
-    // Optional: buy the missing CPU/RAM with CHEESE before the first batch.
-    if (topUpFirst && pricing) {
-      if (suggestedCpuCheese) {
+    // Resources are handled for the user: buy exactly what the drop is short of,
+    // with CHEESE, as separate transactions before the first batch.
+    if (pricing) {
+      if (suggestedCpuCheese && (cheeseBalance === null || cheeseBalance >= suggestedCpuCheese)) {
         const ok = await buyWithCheese("cpu", [suggestedCpuCheese]);
         if (!ok) return;
       }
-      if (suggestedRamCheese) {
+      if (
+        suggestedRamCheese &&
+        pricing.ram.enabled &&
+        (cheeseBalance === null || cheeseBalance >= suggestedRamCheese)
+      ) {
         const ok = await buyWithCheese(
           "ram",
           splitPurchases(suggestedRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
@@ -484,6 +489,7 @@ function AirdropPage() {
         if (!ok) return;
       }
     }
+
 
     setRunState("running");
     setBatchLog([]);

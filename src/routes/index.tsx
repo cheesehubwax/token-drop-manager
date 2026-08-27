@@ -32,9 +32,11 @@ import {
   txLink,
 } from "@/lib/cheese";
 import {
+  bytesPerCheese,
   ceilCheese,
   cheeseForBytes,
   cheeseForCpuUs,
+  cpuUsPerCheese,
   formatCheese,
   splitPurchases,
   weightCalibration,
@@ -388,6 +390,33 @@ function AirdropPage() {
     if (needed === null) return null;
     return ceilCheese(Math.max(needed, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
+
+  /** Current CHEESE prices: how much 1 ms of CPU / 1 KB of RAM costs right now. */
+  const cheesePerCpuMs = useMemo(() => {
+    if (!pricing) return null;
+    const per = cpuUsPerCheese(pricing, calibration, cpuPercent);
+    if (!per || per <= 0) return null;
+    return 1000 / per;
+  }, [pricing, calibration, cpuPercent]);
+  const cheesePerRamKb = useMemo(() => {
+    if (!pricing) return null;
+    const per = bytesPerCheese(pricing);
+    if (!per || per <= 0) return null;
+    return 1024 / per;
+  }, [pricing]);
+
+  /** Full estimated CHEESE cost of this airdrop's CPU and RAM needs. */
+  const estCpuCheese = useMemo(
+    () =>
+      pricing && recipients.length > 0
+        ? cheeseForCpuUs(cpuNeededUs, pricing, calibration, cpuPercent)
+        : null,
+    [pricing, cpuNeededUs, calibration, cpuPercent, recipients.length],
+  );
+  const estRamCheese = useMemo(
+    () => (pricing && ramNeededBytes > 0 ? cheeseForBytes(ramNeededBytes, pricing) : null),
+    [pricing, ramNeededBytes],
+  );
 
   /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
   const buyWithCheese = useCallback(
@@ -916,6 +945,57 @@ function AirdropPage() {
                 </dd>
               </div>
             </dl>
+
+            {/* CHEESE resource cost estimate + live prices */}
+            <div className="mb-4 rounded-md border border-border bg-secondary/40 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Resource cost in {CHEESE_SYMBOL} (estimate)
+              </p>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 font-mono text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-muted-foreground">CPU/NET for this drop</dt>
+                  <dd className="text-foreground">
+                    {estCpuCheese !== null
+                      ? `~${formatCheese(estCpuCheese)} ${CHEESE_SYMBOL}`
+                      : "unavailable"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">RAM for this drop</dt>
+                  <dd className="text-foreground">
+                    {estRamCheese !== null
+                      ? `~${formatCheese(estRamCheese)} ${CHEESE_SYMBOL}`
+                      : "unavailable"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">CPU price</dt>
+                  <dd className="text-foreground">
+                    {cheesePerCpuMs !== null
+                      ? `${formatCheese(cheesePerCpuMs)} ${CHEESE_SYMBOL} / ms`
+                      : "unavailable"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">RAM price</dt>
+                  <dd className="text-foreground">
+                    {cheesePerRamKb !== null
+                      ? `${formatCheese(cheesePerRamKb)} ${CHEESE_SYMBOL} / KB`
+                      : "unavailable"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Only the shortfall is actually purchased
+                {suggestedCpuCheese !== null || suggestedRamCheese !== null
+                  ? ` — about ${formatCheese((suggestedCpuCheese ?? 0) + (suggestedRamCheese ?? 0))} ${CHEESE_SYMBOL} right now.`
+                  : " — your account currently has enough CPU, NET and RAM."}
+                {cheeseBalance !== null
+                  ? ` Your balance: ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`
+                  : ""}
+              </p>
+            </div>
+
             {warnings.filter((w) => w.level === "error").length > 0 && (
               <div className="mb-3 space-y-1">
                 {warnings

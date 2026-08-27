@@ -430,6 +430,8 @@ function AirdropPage() {
 
   const runAirdrop = async () => {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
+    setBatchLog([]);
+    setPurchaseLog([]);
 
     // Resources are handled for the user: buy exactly what the drop is short of,
     // with CHEESE, as separate transactions before the first batch.

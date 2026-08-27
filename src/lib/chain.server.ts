@@ -114,6 +114,9 @@ export interface AccountResources {
   ramAvailableBytes: number;
   refundCpuUs: number;
   refundNetBytes: number;
+  /** Stake weight backing CPU/NET, in 1e-8 WAX units (from total_resources). */
+  cpuWeightUnits: number;
+  netWeightUnits: number;
 }
 
 export interface RamPrice {
@@ -121,6 +124,7 @@ export interface RamPrice {
   /** WAX cost to open one token balance row (~276 bytes). */
   waxPerNewRow: number;
 }
+
 
 // ---------------------------------------------------------------------------
 // Token holders (Hyperion, paginated, with get_table_by_scope fallback)

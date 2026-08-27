@@ -31,7 +31,11 @@ const FETCH_TIMEOUT_MS = 15_000;
 /** AtomicAssets holder queries can be slow on first touch — allow longer. */
 const AA_TIMEOUT_MS = 30_000;
 
-async function fetchJson(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -128,7 +132,6 @@ export interface RamPrice {
   waxPerNewRow: number;
 }
 
-
 // ---------------------------------------------------------------------------
 // Token holders (Hyperion, paginated, with get_table_by_scope fallback)
 // ---------------------------------------------------------------------------
@@ -148,7 +151,12 @@ export async function getTokenHolders(code: string, symbol: string): Promise<Hol
   } catch {
     // Hyperion unavailable everywhere — fall back to scope listing (no balances).
     const holders = await fetchScopeHolders(code);
-    return { holders, truncated: holders.length >= MAX_HOLDERS, source: "chain-fallback", hasBalances: false };
+    return {
+      holders,
+      truncated: holders.length >= MAX_HOLDERS,
+      source: "chain-fallback",
+      hasBalances: false,
+    };
   }
 }
 
@@ -280,7 +288,12 @@ export async function getNftHolders(
     if (out.length === 0) throw new Error(`No holders found for collection ${collection}`);
     return out;
   });
-  return { holders, truncated: holders.length >= MAX_HOLDERS, source: "atomicassets", hasBalances: true };
+  return {
+    holders,
+    truncated: holders.length >= MAX_HOLDERS,
+    source: "atomicassets",
+    hasBalances: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +310,45 @@ export async function getTokenStat(code: string, symbol: string): Promise<TokenS
   const amountPart = stat.supply.split(" ")[0] ?? "0";
   const precision = amountPart.includes(".") ? (amountPart.split(".")[1] ?? "").length : 0;
   return { supply: stat.supply, maxSupply: stat.max_supply ?? "", precision, symbol };
+}
+
+/**
+ * Which of the given accounts already have a row in `code`'s accounts table for
+ * `symbol`. Accounts with an existing row cost the sender no RAM on transfer.
+ * Failed lookups are reported as unknown so the caller can stay conservative.
+ */
+export async function getExistingTokenRows(
+  code: string,
+  symbol: string,
+  accounts: string[],
+): Promise<{ existing: string[]; unknown: string[] }> {
+  const upper = symbol.toUpperCase();
+  const existing: string[] = [];
+  const unknown: string[] = [];
+  const BATCH = 25;
+  for (let i = 0; i < accounts.length; i += BATCH) {
+    const slice = accounts.slice(i, i + BATCH);
+    const results = await Promise.all(
+      slice.map(async (account) => {
+        try {
+          const data = await chainPost<{ rows?: Array<{ balance?: string }> }>(
+            "/v1/chain/get_table_rows",
+            { code, scope: account, table: "accounts", json: true, limit: 20 },
+          );
+          const rows = data.rows ?? [];
+          const has = rows.some((r) => (r.balance ?? "").split(" ")[1]?.toUpperCase() === upper);
+          return { account, state: has ? "existing" : "missing" } as const;
+        } catch {
+          return { account, state: "unknown" } as const;
+        }
+      }),
+    );
+    for (const r of results) {
+      if (r.state === "existing") existing.push(r.account);
+      else if (r.state === "unknown") unknown.push(r.account);
+    }
+  }
+  return { existing, unknown };
 }
 
 interface HyperionTokensResponse {
@@ -379,7 +431,6 @@ export async function getAccountResources(account: string): Promise<AccountResou
     netWeightUnits,
   };
 }
-
 
 export async function getRamPrice(): Promise<RamPrice> {
   const data = await chainPost<{
@@ -553,7 +604,7 @@ export async function getResourcePricing(): Promise<ResourcePricing> {
   let waxPerCheese = spot ?? reference;
   let priceSource: ResourcePricing["priceSource"] = spot ? "pool" : "reference";
   if (spot && reference > 0) {
-    const deviation = Math.abs(spot - reference) / reference * 100;
+    const deviation = (Math.abs(spot - reference) / reference) * 100;
     if (deviation > maxDeviation) {
       waxPerCheese = reference;
       priceSource = "reference";

@@ -15,6 +15,7 @@ import type { Holder, HolderSnapshot } from "@/lib/chain.server";
 import {
   fetchAccountResources,
   fetchCheeseBalance,
+  fetchExistingTokenRows,
   fetchNftHolders,
   fetchRamPrice,
   fetchResourcePricing,
@@ -337,10 +338,81 @@ function AirdropPage() {
   }, [snapshot, filteredHolders, selected, mode, amountText, precision]);
 
   const total = useMemo(() => totalUnits(recipients), [recipients]);
+
+  // ---- Existing token rows -------------------------------------------------
+  // Recipients that already hold a row for the token being sent cost no RAM.
+  // Cache is keyed by contract|symbol|account so re-checks are cheap.
+  const rowCacheRef = useRef<Map<string, boolean>>(new Map());
+  const [rowCacheVersion, setRowCacheVersion] = useState(0);
+  const [rowCheckLoading, setRowCheckLoading] = useState(false);
+  const rowKey = useCallback(
+    (account: string) => `${sendContract}|${sendSymbol.toUpperCase()}|${account}`,
+    [sendContract, sendSymbol],
+  );
+  const recipientAccounts = useMemo(() => recipients.map((r) => r.account), [recipients]);
+  const recipientKey = recipientAccounts.join(",");
+
+  useEffect(() => {
+    if (!sendContract || !sendSymbol || recipientAccounts.length === 0) return;
+    const pending = recipientAccounts.filter((a) => !rowCacheRef.current.has(rowKey(a)));
+    if (pending.length === 0) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setRowCheckLoading(true);
+      fetchExistingTokenRows({
+        data: { code: sendContract, symbol: sendSymbol.toUpperCase(), accounts: pending },
+      })
+        .then((res) => {
+          if (cancelled) return;
+          const unknown = new Set(res.unknown);
+          const existing = new Set(res.existing);
+          for (const account of pending) {
+            if (unknown.has(account)) continue; // leave uncached, stays conservative
+            rowCacheRef.current.set(rowKey(account), existing.has(account));
+          }
+          setRowCacheVersion((v) => v + 1);
+        })
+        .catch(() => {
+          // keep the worst case on failure
+        })
+        .finally(() => {
+          if (!cancelled) setRowCheckLoading(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendContract, sendSymbol, recipientKey, rowKey]);
+
+  const rowStats = useMemo(() => {
+    void rowCacheVersion;
+    let existing = 0;
+    let checked = 0;
+    for (const account of recipientAccounts) {
+      const hit = rowCacheRef.current.get(rowKey(account));
+      if (hit === undefined) continue;
+      checked += 1;
+      if (hit) existing += 1;
+    }
+    return {
+      existing,
+      checked,
+      newRows: recipientAccounts.length - existing,
+      complete: checked === recipientAccounts.length && recipientAccounts.length > 0,
+    };
+  }, [recipientAccounts, rowKey, rowCacheVersion]);
+
   const estimate = useMemo(
     () =>
-      estimateResources(recipients.length, Math.max(1, batchSize), ramPrice?.waxPerNewRow ?? 0.028),
-    [recipients.length, batchSize, ramPrice],
+      estimateResources(
+        recipients.length,
+        Math.max(1, batchSize),
+        ramPrice?.waxPerNewRow ?? 0.028,
+        rowStats.checked > 0 ? rowStats.newRows : null,
+      ),
+    [recipients.length, batchSize, ramPrice, rowStats],
   );
   const warnings = useMemo(
     () =>
@@ -966,6 +1038,13 @@ function AirdropPage() {
                     {estRamCheese !== null
                       ? `~${formatCheese(estRamCheese)} ${CHEESE_SYMBOL}`
                       : "unavailable"}
+                  </dd>
+                  <dd className="text-xs text-muted-foreground">
+                    {rowCheckLoading
+                      ? "checking existing token rows…"
+                      : rowStats.complete
+                        ? `${estimate.maxNewRows} of ${recipients.length} need a new row (${((estimate.maxNewRows * RAM_BYTES_PER_ROW) / 1024).toFixed(2)} KB)`
+                        : `upper bound: assumes all ${recipients.length} need a new row`}
                   </dd>
                 </div>
                 <div>

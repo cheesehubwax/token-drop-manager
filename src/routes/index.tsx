@@ -46,7 +46,6 @@ import {
 } from "@/lib/resources";
 import type { Session } from "@wharfkit/session";
 
-
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -92,7 +91,6 @@ interface AccountResourceView {
 const RAM_BYTES_PER_ROW = 276;
 
 const ACCOUNT_RE = /^[a-z1-5.]{1,12}$/;
-
 
 function shortError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
@@ -143,7 +141,6 @@ function AirdropPage() {
   const [purchaseLog, setPurchaseLog] = useState<
     Array<{ kind: "cpu" | "ram"; cheese: number; txId?: string; error?: string }>
   >([]);
-
 
   // Run state
   const [busy, setBusy] = useState<string | null>(null);
@@ -213,7 +210,6 @@ function AirdropPage() {
       .then(setPricing)
       .catch(() => setPricing(null));
   }, [actor, refreshAccount]);
-
 
   // Fetch token stat whenever send token changes
   useEffect(() => {
@@ -345,11 +341,7 @@ function AirdropPage() {
   const total = useMemo(() => totalUnits(recipients), [recipients]);
   const estimate = useMemo(
     () =>
-      estimateResources(
-        recipients.length,
-        Math.max(1, batchSize),
-        ramPrice?.waxPerNewRow ?? 0.028,
-      ),
+      estimateResources(recipients.length, Math.max(1, batchSize), ramPrice?.waxPerNewRow ?? 0.028),
     [recipients.length, batchSize, ramPrice],
   );
   const warnings = useMemo(
@@ -387,7 +379,9 @@ function AirdropPage() {
 
   const suggestedCpuCheese = useMemo(
     () =>
-      pricing && cpuShortUs > 0 ? cheeseForCpuUs(cpuShortUs, pricing, calibration, cpuPercent) : null,
+      pricing && cpuShortUs > 0
+        ? cheeseForCpuUs(cpuShortUs, pricing, calibration, cpuPercent)
+        : null,
     [pricing, cpuShortUs, calibration, cpuPercent],
   );
   const suggestedRamCheese = useMemo(() => {
@@ -397,9 +391,6 @@ function AirdropPage() {
     return ceilCheese(Math.max(needed, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
 
-
-
-
   /** Sign one or more CHEESE transfers to a resource contract. Returns true on full success. */
   const buyWithCheese = useCallback(
     async (kind: "cpu" | "ram", amounts: number[]): Promise<boolean> => {
@@ -407,7 +398,9 @@ function AirdropPage() {
       if (!wallet || !sessionInfo || amounts.length === 0) return false;
       const to = kind === "cpu" ? CHEESE_CPU_CONTRACT : CHEESE_RAM_CONTRACT;
       const memoText =
-        kind === "cpu" ? powerupMemo(sessionInfo.actor, cpuPercent) : ramMemo(sessionInfo.actor, true);
+        kind === "cpu"
+          ? powerupMemo(sessionInfo.actor, cpuPercent)
+          : ramMemo(sessionInfo.actor, true);
       setBusy(kind === "cpu" ? "buy-cpu" : "buy-ram");
       let ok = true;
       try {
@@ -462,7 +455,6 @@ function AirdropPage() {
       }
     }
 
-
     setRunState("running");
     setBatchLog([]);
     setCancelRequested(false);
@@ -502,7 +494,6 @@ function AirdropPage() {
     void refreshAccount(sessionInfo.actor);
   };
 
-
   const downloadCsv = useCallback(() => {
     const lines = ["account,amount,token,memo"];
     for (const r of recipients) {
@@ -527,7 +518,6 @@ function AirdropPage() {
     busy === null &&
     tokenStat !== null;
 
-
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -536,7 +526,8 @@ function AirdropPage() {
             WAX <span className="text-primary">Airdrop</span> Tool
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Snapshot token or NFT holders, configure the drop, sign batched transfers from your wallet.
+            Snapshot token or NFT holders, configure the drop, sign batched transfers from your
+            wallet.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -600,9 +591,7 @@ function AirdropPage() {
             ) : (
               sendContract &&
               sendSymbol && (
-                <p className="mt-2 text-xs text-destructive">
-                  Token not found on {sendContract}.
-                </p>
+                <p className="mt-2 text-xs text-destructive">Token not found on {sendContract}.</p>
               )
             )}
             {walletTokens.length > 0 && (
@@ -792,9 +781,7 @@ function AirdropPage() {
               </label>
             </div>
           </section>
-
         </div>
-
 
         {/* RIGHT: holders + run */}
         <div className="space-y-6 lg:col-span-3">
@@ -839,7 +826,9 @@ function AirdropPage() {
                   <thead className="sticky top-0 bg-secondary">
                     <tr>
                       <th className="px-3 py-2 text-xs font-medium text-muted-foreground">#</th>
-                      <th className="px-3 py-2 text-xs font-medium text-muted-foreground">Account</th>
+                      <th className="px-3 py-2 text-xs font-medium text-muted-foreground">
+                        Account
+                      </th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                         {snapshotMode === "nft" ? "NFTs" : "Balance"}
                       </th>
@@ -888,7 +877,8 @@ function AirdropPage() {
                 </table>
                 {filteredHolders.length > 500 && (
                   <p className="bg-secondary px-3 py-2 text-xs text-muted-foreground">
-                    Showing first 500 rows — all {filteredHolders.length.toLocaleString()} selected accounts are still included in the drop.
+                    Showing first 500 rows — all {filteredHolders.length.toLocaleString()} selected
+                    accounts are still included in the drop.
                   </p>
                 )}
               </div>
@@ -921,7 +911,9 @@ function AirdropPage() {
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Est. total CPU</dt>
-                <dd className="text-lg text-foreground">~{(estimate.totalCpuUs / 1000).toFixed(0)} ms</dd>
+                <dd className="text-lg text-foreground">
+                  ~{(estimate.totalCpuUs / 1000).toFixed(0)} ms
+                </dd>
               </div>
             </dl>
             {warnings.filter((w) => w.level === "error").length > 0 && (
@@ -937,14 +929,14 @@ function AirdropPage() {
             )}
 
             <div className="flex flex-wrap gap-2">
-
               {runState !== "running" ? (
                 <button
                   onClick={runAirdrop}
                   disabled={!canRun}
                   className="rounded-md bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-40"
                 >
-                  AIRDROP {recipients.length > 0 && `(${recipients.length.toLocaleString()} recipients)`}
+                  AIRDROP{" "}
+                  {recipients.length > 0 && `(${recipients.length.toLocaleString()} recipients)`}
                 </button>
               ) : (
                 <button
@@ -1013,7 +1005,6 @@ function AirdropPage() {
               </div>
             )}
 
-
             {batchLog.length > 0 && (
               <div className="mt-4 max-h-64 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-xs">
                 {batchLog.map((b) => (
@@ -1045,8 +1036,9 @@ function AirdropPage() {
                 ))}
                 {runState === "done" && (
                   <div className="mt-1 border-t border-border pt-1 text-foreground">
-                    Done · {batchLog.filter((b) => b.txId).length}/{estimate.txCount} batches succeeded.
-                    Failed batches can be re-sent by pressing Airdrop again after fixing the issue.
+                    Done · {batchLog.filter((b) => b.txId).length}/{estimate.txCount} batches
+                    succeeded. Failed batches can be re-sent by pressing Airdrop again after fixing
+                    the issue.
                   </div>
                 )}
               </div>

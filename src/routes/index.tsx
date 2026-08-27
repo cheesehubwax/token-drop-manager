@@ -32,14 +32,10 @@ import {
   txLink,
 } from "@/lib/cheese";
 import {
-  bytesPerCheese,
   ceilCheese,
   cheeseForBytes,
   cheeseForCpuUs,
-  cpuUsPerCheese,
   formatCheese,
-  netBytesPerCheese,
-  planTotal,
   splitPurchases,
   weightCalibration,
   type ResourcePricing,

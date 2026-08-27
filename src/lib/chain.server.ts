@@ -3,6 +3,9 @@
  * All functions are plain async helpers — call them from createServerFn handlers only.
  */
 
+import { CHEESE_CONTRACT, CHEESE_RAM_CONTRACT, CHEESE_SYMBOL } from "./cheese";
+import type { ResourcePricing } from "./resources";
+
 export const CHAIN_ENDPOINTS = [
   "https://wax.greymass.com",
   "https://wax.eosphere.io",
@@ -399,13 +402,6 @@ export async function getRamPrice(): Promise<RamPrice> {
 // ---------------------------------------------------------------------------
 // CHEESE resource purchases (cheesepowerz / ram.chz)
 // ---------------------------------------------------------------------------
-
-import {
-  CHEESE_CONTRACT,
-  CHEESE_RAM_CONTRACT,
-  CHEESE_SYMBOL,
-} from "./cheese";
-import type { ResourcePricing } from "./resources";
 
 /** Liquid CHEESE balance of an account (0 when the account holds none). */
 export async function getCheeseBalance(account: string): Promise<number> {

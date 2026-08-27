@@ -136,19 +136,14 @@ function AirdropPage() {
   const [resources, setResources] = useState<AccountResourceView | null>(null);
   const [ramPrice, setRamPrice] = useState<{ waxPerKb: number; waxPerNewRow: number } | null>(null);
 
-  // CHEESE resource purchases
+  // CHEESE resource purchases (handled automatically when the airdrop runs)
   const [cheeseBalance, setCheeseBalance] = useState<number | null>(null);
   const [pricing, setPricing] = useState<ResourcePricing | null>(null);
-  const [cpuPercent, setCpuPercent] = useState(DEFAULT_CPU_PERCENT);
-  const [cpuCheese, setCpuCheese] = useState("");
-  const [ramCheese, setRamCheese] = useState("");
-  const [cpuTouched, setCpuTouched] = useState(false);
-  const [ramTouched, setRamTouched] = useState(false);
-  const [topUpFirst, setTopUpFirst] = useState(false);
+  const cpuPercent = DEFAULT_CPU_PERCENT;
   const [purchaseLog, setPurchaseLog] = useState<
     Array<{ kind: "cpu" | "ram"; cheese: number; txId?: string; error?: string }>
   >([]);
-  const resourceSectionRef = useRef<HTMLElement | null>(null);
+
 
   // Run state
   const [busy, setBusy] = useState<string | null>(null);

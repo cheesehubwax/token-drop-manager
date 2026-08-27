@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   getAccountResources,
   getCheeseBalance,
+  getExistingTokenRows,
   getNftHolders,
   getRamPrice,
   getResourcePricing,
@@ -71,3 +72,15 @@ export const fetchCheeseBalance = createServerFn({ method: "POST" })
 export const fetchResourcePricing = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => input)
   .handler(async () => getResourcePricing());
+
+export const fetchExistingTokenRows = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        code: z.string().min(1).max(13),
+        symbol: z.string().min(1).max(7),
+        accounts: z.array(z.string().min(1).max(13)).max(5000),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => getExistingTokenRows(data.code, data.symbol, data.accounts));

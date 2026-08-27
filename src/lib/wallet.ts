@@ -6,6 +6,7 @@ import { SessionKit, Session, Chains, type ChainDefinition } from "@wharfkit/ses
 import { WebRenderer } from "@wharfkit/web-renderer";
 import { WalletPluginAnchor } from "@wharfkit/wallet-plugin-anchor";
 import { WalletPluginCloudWallet } from "@wharfkit/wallet-plugin-cloudwallet";
+import { CHEESE_CONTRACT } from "./cheese";
 
 export const WAX_CHAIN: ChainDefinition = Chains.WAX;
 
@@ -71,6 +72,41 @@ export async function transactTransfers(
     },
   }));
   const result = await session.transact({ actions });
+  const txId = result.response?.["transaction_id"];
+  if (typeof txId === "string" && txId) return txId;
+  return result.request.toString();
+}
+
+export interface CheeseTransferInput {
+  /** Destination contract: cheesepowerz (CPU/NET) or ram.chz (RAM). */
+  to: string;
+  /** Formatted CHEESE quantity, e.g. "2.5000 CHEESE". */
+  quantity: string;
+  memo: string;
+}
+
+/** Sign and broadcast a single CHEESE transfer (resource purchase). */
+export async function transferCheese(
+  session: Session,
+  input: CheeseTransferInput,
+): Promise<string> {
+  const result = await session.transact({
+    actions: [
+      {
+        account: CHEESE_CONTRACT,
+        name: "transfer",
+        authorization: [
+          { actor: session.actor.toString(), permission: session.permission.toString() },
+        ],
+        data: {
+          from: session.actor.toString(),
+          to: input.to,
+          quantity: input.quantity,
+          memo: input.memo,
+        },
+      },
+    ],
+  });
   const txId = result.response?.["transaction_id"];
   if (typeof txId === "string" && txId) return txId;
   return result.request.toString();

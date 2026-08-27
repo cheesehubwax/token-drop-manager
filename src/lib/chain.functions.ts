@@ -2,12 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   getAccountResources,
+  getCheeseBalance,
   getNftHolders,
   getRamPrice,
+  getResourcePricing,
   getTokenHolders,
   getTokenStat,
   getWalletTokens,
 } from "./chain.server";
+
 
 export const fetchTokenHolders = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
@@ -58,3 +61,13 @@ export const fetchAccountResources = createServerFn({ method: "POST" })
 export const fetchRamPrice = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => input)
   .handler(async () => getRamPrice());
+
+export const fetchCheeseBalance = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ account: z.string().min(1).max(13) }).parse(input),
+  )
+  .handler(async ({ data }) => getCheeseBalance(data.account));
+
+export const fetchResourcePricing = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => input)
+  .handler(async () => getResourcePricing());

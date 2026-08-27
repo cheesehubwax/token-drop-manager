@@ -127,7 +127,7 @@ export interface RamPrice {
 // ---------------------------------------------------------------------------
 
 const HYPERION_PAGE = 1000;
-const MAX_HOLDERS = 20_000;
+const MAX_HOLDERS = 5_000;
 
 interface HyperionHoldersResponse {
   holders?: Array<{ account?: string; amount?: number; balance?: string }>;

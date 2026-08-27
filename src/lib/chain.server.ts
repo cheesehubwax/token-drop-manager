@@ -299,6 +299,48 @@ export async function getTokenStat(code: string, symbol: string): Promise<TokenS
   return { supply: stat.supply, maxSupply: stat.max_supply ?? "", precision, symbol };
 }
 
+/**
+ * Which of the given accounts already have a row in `code`'s accounts table for
+ * `symbol`. Accounts with an existing row cost the sender no RAM on transfer.
+ * Failed lookups are reported as unknown so the caller can stay conservative.
+ */
+export async function getExistingTokenRows(
+  code: string,
+  symbol: string,
+  accounts: string[],
+): Promise<{ existing: string[]; unknown: string[] }> {
+  const upper = symbol.toUpperCase();
+  const existing: string[] = [];
+  const unknown: string[] = [];
+  const BATCH = 25;
+  for (let i = 0; i < accounts.length; i += BATCH) {
+    const slice = accounts.slice(i, i + BATCH);
+    const results = await Promise.all(
+      slice.map(async (account) => {
+        try {
+          const data = await chainPost<{ rows?: Array<{ balance?: string }> }>(
+            "/v1/chain/get_table_rows",
+            { code, scope: account, table: "accounts", json: true, limit: 20 },
+          );
+          const rows = data.rows ?? [];
+          const has = rows.some(
+            (r) => (r.balance ?? "").split(" ")[1]?.toUpperCase() === upper,
+          );
+          return { account, state: has ? "existing" : "missing" } as const;
+        } catch {
+          return { account, state: "unknown" } as const;
+        }
+      }),
+    );
+    for (const r of results) {
+      if (r.state === "existing") existing.push(r.account);
+      else if (r.state === "unknown") unknown.push(r.account);
+    }
+  }
+  return { existing, unknown };
+}
+
+
 interface HyperionTokensResponse {
   tokens?: Array<{ symbol?: string; contract?: string; amount?: number; precision?: number }>;
 }

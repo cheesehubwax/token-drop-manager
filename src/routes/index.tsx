@@ -546,7 +546,9 @@ function AirdropPage() {
     recipients.length > 0 &&
     !hasError &&
     runState !== "running" &&
+    busy === null &&
     tokenStat !== null;
+
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8">

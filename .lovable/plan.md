@@ -10,8 +10,9 @@ A single-page tool for airdropping a WAX token to holders of another token or NF
    - Token holders: contract + symbol
    - NFT holders: AtomicAssets collection, optionally narrowed by schema or template
 4. Load the holder list. Every holder is selected by default; each row shows account, balance (or NFT count), and the amount they'll receive.
-5. Choose distribution: equal split of a total, fixed amount each, or pro-rata by holdings.
-6. Filter and tune: minimum balance threshold, max recipients, exclude list (own account and common contracts excluded by default), deselect any row.
+5. Quick-select buttons: Top 10 / Top 50 / Top 100 by balance (selecting only those rows), plus Select all / Clear all. Ranking follows the current sort (balance by default).
+6. Choose distribution: equal split of a total, fixed amount each, or pro-rata by holdings.
+7. Filter and tune: minimum balance threshold, max recipients, exclude list (own account and common contracts excluded by default), deselect any row.
 7. Review the summary: recipient count, total sent, per-transaction batching, and estimated CPU/NET/RAM cost against the account's current resources.
 8. Press Airdrop. Transactions are signed and broadcast in batches, with live per-batch status, transaction IDs, retry of failed batches, and a downloadable CSV report.
 

@@ -28,8 +28,9 @@ Chain layer (`src/lib/chain.server.ts` + `src/lib/chain.functions.ts`)
 - Exposed as `fetchInventoryAssets` / `fetchInventoryCollections` server functions with Zod validation, matching the existing pattern.
 
 Allocation (`src/lib/airdrop.ts`)
-- New `assignAssets(pool, accounts, { perRecipient | templateId, shuffle, seed })` returning `{ account, assetIds }[]` and a `shortfall` count. Seeded shuffle so the preview matches what gets signed.
-- `estimateResources` gains an NFT branch: one `atomicassets::transfer` action per recipient (asset IDs grouped per recipient), conservative per-asset CPU/NET constants, and RAM sized per transferred asset instead of per token balance row. The existing token-row lookup is skipped in NFT mode.
+- New `assignAssets(pool, accounts)` returning `{ account, assetId }[]` and a `shortfall` count — one asset per account, taken in pool order.
+- `estimateResources` gains an NFT branch: one `atomicassets::transfer` action per recipient, conservative per-asset CPU/NET constants, and RAM sized per transferred asset instead of per token balance row. The existing token-row lookup is skipped in NFT mode.
+
 
 Wallet (`src/lib/wallet.ts`)
 - `transactNftTransfers(session, groups)` builds `atomicassets::transfer` actions with `{ from, to, asset_ids, memo }`, one action per recipient, batched by the existing batch-size control. Same signing, transaction-link, and retry surface as token transfers.

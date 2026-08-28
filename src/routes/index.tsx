@@ -456,12 +456,18 @@ function AirdropPage() {
         : null,
     [pricing, cpuShortUs, calibration, cpuPercent],
   );
-  const suggestedRamCheese = useMemo(() => {
-    if (!pricing || ramShortBytes <= 0) return null;
-    const needed = cheeseForBytes(ramShortBytes, pricing);
-    if (needed === null) return null;
-    return ceilCheese(Math.max(needed, pricing.ram.minCheese));
+  /**
+   * RAM is always purchased: at least MIN_RAM_PURCHASE_CHEESE, more when the
+   * drop's estimated RAM need is larger. Null only when pricing is unavailable.
+   */
+  const requiredRamCheese = useMemo(() => {
+    if (!pricing) return null;
+    const needed = ramShortBytes > 0 ? cheeseForBytes(ramShortBytes, pricing) : 0;
+    return ceilCheese(
+      Math.max(MIN_RAM_PURCHASE_CHEESE, needed ?? 0, pricing.ram.minCheese),
+    );
   }, [pricing, ramShortBytes]);
+
 
   /** Current CHEESE prices: how much 1 ms of CPU / 1 KB of RAM costs right now. */
   const cheesePerCpuMs = useMemo(() => {

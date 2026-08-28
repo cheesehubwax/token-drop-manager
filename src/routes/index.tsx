@@ -28,6 +28,8 @@ import {
   CHEESE_RAM_CONTRACT,
   CHEESE_SYMBOL,
   DEFAULT_CPU_PERCENT,
+  MIN_RAM_PURCHASE_CHEESE,
+
   powerupMemo,
   ramMemo,
   txLink,

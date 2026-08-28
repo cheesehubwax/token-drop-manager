@@ -297,6 +297,162 @@ export async function getNftHolders(
 }
 
 // ---------------------------------------------------------------------------
+// Wallet NFT inventory (AtomicAssets) — used as the pool for NFT airdrops
+// ---------------------------------------------------------------------------
+
+export interface InventoryCollection {
+  collection: string;
+  name: string;
+  assets: number;
+}
+
+export interface InventoryTemplate {
+  templateId: number;
+  schema: string;
+  name: string;
+  /** How many assets of this template the account currently owns. */
+  count: number;
+}
+
+interface AaAccountCollectionsResponse {
+  data?: {
+    collections?: Array<{
+      collection?: { collection_name?: string; name?: string };
+      assets?: string;
+    }>;
+  };
+}
+
+interface AaAccountCollectionDetailResponse {
+  data?: {
+    templates?: Array<{ template_id?: string | null; assets?: string }>;
+  };
+}
+
+interface AaTemplatesResponse {
+  data?: Array<{
+    template_id?: string;
+    schema?: { schema_name?: string };
+    immutable_data?: Record<string, unknown>;
+  }>;
+}
+
+interface AaAssetsResponse {
+  data?: Array<{ asset_id?: string; template?: { template_id?: string } | null }>;
+}
+
+/** Collections the account owns NFTs from, most assets first. */
+export async function getInventoryCollections(account: string): Promise<InventoryCollection[]> {
+  const [collections] = await withFailover(ATOMIC_ENDPOINTS, async (base) => {
+    const data = (await fetchJson(
+      `${base}/atomicassets/v1/accounts/${account}`,
+      undefined,
+      AA_TIMEOUT_MS,
+    )) as AaAccountCollectionsResponse;
+    const rows = data.data?.collections ?? [];
+    return rows
+      .map((r) => ({
+        collection: r.collection?.collection_name ?? "",
+        name: r.collection?.name ?? r.collection?.collection_name ?? "",
+        assets: parseInt(r.assets ?? "0", 10) || 0,
+      }))
+      .filter((c) => c.collection && c.assets > 0)
+      .sort((a, b) => b.assets - a.assets);
+  });
+  return collections;
+}
+
+/** Templates the account owns inside one collection, with owned counts and names. */
+export async function getInventoryTemplates(
+  account: string,
+  collection: string,
+): Promise<InventoryTemplate[]> {
+  const [templates] = await withFailover(ATOMIC_ENDPOINTS, async (base) => {
+    const detail = (await fetchJson(
+      `${base}/atomicassets/v1/accounts/${account}/${collection}`,
+      undefined,
+      AA_TIMEOUT_MS,
+    )) as AaAccountCollectionDetailResponse;
+    const owned = (detail.data?.templates ?? [])
+      .map((t) => ({
+        templateId: t.template_id ? parseInt(t.template_id, 10) : NaN,
+        count: parseInt(t.assets ?? "0", 10) || 0,
+      }))
+      .filter((t) => Number.isFinite(t.templateId) && t.templateId > 0 && t.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 200);
+    if (owned.length === 0) return [];
+
+    // Enrich with schema + display name (best effort; falls back to the id).
+    const meta = new Map<number, { schema: string; name: string }>();
+    try {
+      const ids = owned.map((t) => t.templateId).join(",");
+      const res = (await fetchJson(
+        `${base}/atomicassets/v1/templates?collection_name=${collection}&ids=${ids}&limit=200`,
+        undefined,
+        AA_TIMEOUT_MS,
+      )) as AaTemplatesResponse;
+      for (const t of res.data ?? []) {
+        const id = t.template_id ? parseInt(t.template_id, 10) : NaN;
+        if (!Number.isFinite(id)) continue;
+        const raw = t.immutable_data?.["name"];
+        meta.set(id, {
+          schema: t.schema?.schema_name ?? "",
+          name: typeof raw === "string" && raw ? raw : `#${id}`,
+        });
+      }
+    } catch {
+      // names are optional
+    }
+    return owned.map((t) => ({
+      templateId: t.templateId,
+      schema: meta.get(t.templateId)?.schema ?? "",
+      name: meta.get(t.templateId)?.name ?? `#${t.templateId}`,
+      count: t.count,
+    }));
+  });
+  return templates;
+}
+
+/** Max assets pulled into an airdrop pool. */
+const MAX_POOL_ASSETS = 2000;
+const AA_ASSET_PAGE = 200;
+
+/** Asset ids of one template currently owned by the account, oldest mint first. */
+export async function getInventoryAssets(
+  account: string,
+  collection: string,
+  templateId: number,
+): Promise<{ assetIds: string[]; truncated: boolean }> {
+  const [assetIds] = await withFailover(ATOMIC_ENDPOINTS, async (base) => {
+    const out: string[] = [];
+    for (let page = 1; ; page++) {
+      const params = new URLSearchParams({
+        owner: account,
+        collection_name: collection,
+        template_id: String(templateId),
+        page: String(page),
+        limit: String(AA_ASSET_PAGE),
+        order: "asc",
+        sort: "asset_id",
+      });
+      const data = (await fetchJson(
+        `${base}/atomicassets/v1/assets?${params}`,
+        undefined,
+        AA_TIMEOUT_MS,
+      )) as AaAssetsResponse;
+      const rows = data.data ?? [];
+      for (const r of rows) if (r.asset_id) out.push(r.asset_id);
+      if (rows.length < AA_ASSET_PAGE || out.length >= MAX_POOL_ASSETS) break;
+    }
+    return out.slice(0, MAX_POOL_ASSETS);
+  });
+  return { assetIds, truncated: assetIds.length >= MAX_POOL_ASSETS };
+}
+
+
+
+// ---------------------------------------------------------------------------
 // Token stat, balances, account resources, RAM price
 // ---------------------------------------------------------------------------
 

@@ -1,21 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  assignAssets,
   computeAmounts,
   chunk,
+  estimateNftResources,
   estimateResources,
   formatQuantity,
   formatUnits,
   resourceWarnings,
   totalUnits,
+  RAM_BYTES_PER_NFT,
   type AirdropRecipient,
   type DistributionMode,
 } from "@/lib/airdrop";
-import type { Holder, HolderSnapshot } from "@/lib/chain.server";
+import type {
+  Holder,
+  HolderSnapshot,
+  InventoryCollection,
+  InventoryTemplate,
+} from "@/lib/chain.server";
 import {
   fetchAccountResources,
   fetchCheeseBalance,
   fetchExistingTokenRows,
+  fetchInventoryAssets,
+  fetchInventoryCollections,
+  fetchInventoryTemplates,
   fetchNftHolders,
   fetchRamPrice,
   fetchResourcePricing,
@@ -23,6 +34,7 @@ import {
   fetchTokenStat,
   fetchWalletTokens,
 } from "@/lib/chain.functions";
+
 import {
   CHEESE_CPU_CONTRACT,
   CHEESE_RAM_CONTRACT,
@@ -103,6 +115,9 @@ function AirdropPage() {
   const [walletReady, setWalletReady] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
 
+  // What to send: a token, or NFTs from your own inventory
+  const [assetKind, setAssetKind] = useState<"token" | "nft">("token");
+
   // Send-token state
   const [sendContract, setSendContract] = useState("eosio.token");
   const [sendSymbol, setSendSymbol] = useState("WAX");
@@ -111,6 +126,16 @@ function AirdropPage() {
   const [walletTokens, setWalletTokens] = useState<
     Array<{ contract: string; symbol: string; amount: number; precision: number }>
   >([]);
+
+  // Send-NFT state (pool = assets of one template owned by the connected account)
+  const [nftCollections, setNftCollections] = useState<InventoryCollection[]>([]);
+  const [nftCollection, setNftCollection] = useState("");
+  const [nftTemplates, setNftTemplates] = useState<InventoryTemplate[]>([]);
+  const [nftTemplateId, setNftTemplateId] = useState<number | null>(null);
+  const [nftPool, setNftPool] = useState<string[]>([]);
+  const [nftLoading, setNftLoading] = useState<null | "collections" | "templates" | "assets">(null);
+  const [nftError, setNftError] = useState<string | null>(null);
+
 
   // Snapshot state
   const [snapshotMode, setSnapshotMode] = useState<"token" | "nft">("token");
@@ -234,6 +259,95 @@ function AirdropPage() {
     };
   }, [sendContract, sendSymbol]);
 
+  const isNft = assetKind === "nft";
+
+  // NFT inventory: collections owned by the connected account
+  useEffect(() => {
+    if (!isNft || !actor) return;
+    let cancelled = false;
+    setNftLoading("collections");
+    setNftError(null);
+    fetchInventoryCollections({ data: { account: actor } })
+      .then((cols) => {
+        if (cancelled) return;
+        setNftCollections(cols);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setNftCollections([]);
+          setNftError(`Could not load your NFT collections: ${shortError(err)}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNftLoading(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isNft, actor]);
+
+  // NFT inventory: templates owned inside the chosen collection
+  useEffect(() => {
+    if (!isNft || !actor || !nftCollection) {
+      setNftTemplates([]);
+      return;
+    }
+    let cancelled = false;
+    setNftLoading("templates");
+    setNftError(null);
+    setNftTemplateId(null);
+    setNftPool([]);
+    fetchInventoryTemplates({ data: { account: actor, collection: nftCollection } })
+      .then((tpls) => {
+        if (cancelled) return;
+        setNftTemplates(tpls);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setNftTemplates([]);
+          setNftError(`Could not load templates for ${nftCollection}: ${shortError(err)}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNftLoading(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isNft, actor, nftCollection]);
+
+  // NFT inventory: the pool of asset ids for the chosen template
+  useEffect(() => {
+    if (!isNft || !actor || !nftCollection || nftTemplateId === null) {
+      setNftPool([]);
+      return;
+    }
+    let cancelled = false;
+    setNftLoading("assets");
+    setNftError(null);
+    fetchInventoryAssets({
+      data: { account: actor, collection: nftCollection, templateId: nftTemplateId },
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setNftPool(res.assetIds);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setNftPool([]);
+          setNftError(`Could not load your NFTs of this template: ${shortError(err)}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNftLoading(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isNft, actor, nftCollection, nftTemplateId]);
+
+
+
   const connect = async () => {
     if (!walletRef.current) return;
     setBusy("connect");
@@ -342,6 +456,16 @@ function AirdropPage() {
 
   const total = useMemo(() => totalUnits(recipients), [recipients]);
 
+  /** Selected recipients in list order — used directly by NFT drops. */
+  const selectedAccounts = useMemo(
+    () => filteredHolders.filter((h) => selected.has(h.account)).map((h) => h.account),
+    [filteredHolders, selected],
+  );
+  const { assignments: nftAssignments, shortfall: nftShortfall } = useMemo(
+    () => (isNft ? assignAssets(nftPool, selectedAccounts) : { assignments: [], shortfall: 0 }),
+    [isNft, nftPool, selectedAccounts],
+  );
+
   // ---- Existing token rows -------------------------------------------------
   // Recipients that already hold a row for the token being sent cost no RAM.
   // Cache is keyed by contract|symbol|account so re-checks are cheap.
@@ -356,7 +480,7 @@ function AirdropPage() {
   const recipientKey = recipientAccounts.join(",");
 
   useEffect(() => {
-    if (!sendContract || !sendSymbol || recipientAccounts.length === 0) return;
+    if (isNft || !sendContract || !sendSymbol || recipientAccounts.length === 0) return;
     const pending = recipientAccounts.filter((a) => !rowCacheRef.current.has(rowKey(a)));
     if (pending.length === 0) return;
     let cancelled = false;
@@ -387,7 +511,7 @@ function AirdropPage() {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sendContract, sendSymbol, recipientKey, rowKey]);
+  }, [isNft, sendContract, sendSymbol, recipientKey, rowKey]);
 
   const rowStats = useMemo(() => {
     void rowCacheVersion;
@@ -409,28 +533,43 @@ function AirdropPage() {
 
   const estimate = useMemo(
     () =>
-      estimateResources(
-        recipients.length,
-        Math.max(1, batchSize),
-        ramPrice?.waxPerNewRow ?? 0.028,
-        rowStats.checked > 0 ? rowStats.newRows : null,
-      ),
-    [recipients.length, batchSize, ramPrice, rowStats],
+      isNft
+        ? estimateNftResources(
+            nftAssignments.length,
+            Math.max(1, batchSize),
+            ramPrice?.waxPerKb ?? 0.1,
+          )
+        : estimateResources(
+            recipients.length,
+            Math.max(1, batchSize),
+            ramPrice?.waxPerNewRow ?? 0.028,
+            rowStats.checked > 0 ? rowStats.newRows : null,
+          ),
+    [isNft, nftAssignments.length, recipients.length, batchSize, ramPrice, rowStats],
   );
-  const warnings = useMemo(
-    () =>
-      // Resource shortfalls are handled automatically with CHEESE top-ups, so
-      // only the token balance is validated here.
-      resourceWarnings(
-        estimate,
-        null,
-        senderBalanceUnits,
-        total,
-        precision,
-        sendSymbol.toUpperCase(),
-      ),
-    [estimate, senderBalanceUnits, total, precision, sendSymbol],
-  );
+  const warnings = useMemo(() => {
+    if (isNft) {
+      // NFTs come out of your own inventory: the only blocker is pool coverage.
+      return nftShortfall > 0
+        ? [
+            {
+              level: "error" as const,
+              message: `You need ${nftShortfall} more NFT${nftShortfall === 1 ? "" : "s"} of this template to cover every selected recipient. Deselect recipients or pick a template you own more of.`,
+            },
+          ]
+        : [];
+    }
+    // Resource shortfalls are handled automatically with CHEESE top-ups, so
+    // only the token balance is validated here.
+    return resourceWarnings(
+      estimate,
+      null,
+      senderBalanceUnits,
+      total,
+      precision,
+      sendSymbol.toUpperCase(),
+    );
+  }, [isNft, nftShortfall, estimate, senderBalanceUnits, total, precision, sendSymbol]);
   const hasError = warnings.some((w) => w.level === "error");
 
   // ---- CHEESE resource purchases -----------------------------------------
@@ -442,15 +581,18 @@ function AirdropPage() {
     [resources],
   );
 
+  const recipientCount = isNft ? nftAssignments.length : recipients.length;
+
   /** CPU needed for one batch plus 20% headroom. */
   const cpuNeededUs = estimate.cpuPerTxUs * 1.2;
-  const ramNeededBytes = estimate.maxNewRows * RAM_BYTES_PER_ROW;
+  const ramNeededBytes = estimate.maxNewRows * (isNft ? RAM_BYTES_PER_NFT : RAM_BYTES_PER_ROW);
   const cpuShortUs =
-    resources && recipients.length > 0 ? Math.max(0, cpuNeededUs - resources.cpuAvailableUs) : 0;
+    resources && recipientCount > 0 ? Math.max(0, cpuNeededUs - resources.cpuAvailableUs) : 0;
   const ramShortBytes =
-    resources && recipients.length > 0
+    resources && recipientCount > 0
       ? Math.max(0, ramNeededBytes - resources.ramAvailableBytes)
       : 0;
+
 
   const suggestedCpuCheese = useMemo(
     () =>
@@ -486,10 +628,10 @@ function AirdropPage() {
   /** Full estimated CHEESE cost of this airdrop's CPU and RAM needs. */
   const estCpuCheese = useMemo(
     () =>
-      pricing && recipients.length > 0
+      pricing && recipientCount > 0
         ? cheeseForCpuUs(cpuNeededUs, pricing, calibration, cpuPercent)
         : null,
-    [pricing, cpuNeededUs, calibration, cpuPercent, recipients.length],
+    [pricing, cpuNeededUs, calibration, cpuPercent, recipientCount],
   );
   const estRamCheese = useMemo(
     () => (pricing && ramNeededBytes > 0 ? cheeseForBytes(ramNeededBytes, pricing) : null),
@@ -538,7 +680,9 @@ function AirdropPage() {
   );
 
   const runAirdrop = async () => {
-    if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
+    if (!walletRef.current || !sessionInfo) return;
+    if (isNft ? nftAssignments.length === 0 || nftShortfall > 0 : recipients.length === 0) return;
+
     setBatchLog([]);
     setPurchaseLog([]);
     setRunError(null);
@@ -585,6 +729,41 @@ function AirdropPage() {
     setBatchLog([]);
     setCancelRequested(false);
     cancelRef.current = false;
+    if (isNft) {
+      const batches = chunk(nftAssignments, Math.max(1, batchSize));
+      for (let i = 0; i < batches.length; i++) {
+        if (cancelRef.current) {
+          setBatchLog((prev) => [
+            ...prev,
+            { batch: i + 1, recipients: 0, error: "Cancelled by user" },
+          ]);
+          break;
+        }
+        const batch = batches[i];
+        if (!batch) continue;
+        try {
+          const txId = await walletRef.current.transactNftTransfers(
+            sessionInfo.session,
+            batch.map((a) => ({
+              from: sessionInfo.actor,
+              to: a.account,
+              assetIds: [a.assetId],
+              memo,
+            })),
+          );
+          setBatchLog((prev) => [...prev, { batch: i + 1, recipients: batch.length, txId }]);
+        } catch (err) {
+          setBatchLog((prev) => [
+            ...prev,
+            { batch: i + 1, recipients: batch.length, error: shortError(err) },
+          ]);
+        }
+        if (i < batches.length - 1) await new Promise((r) => setTimeout(r, 1200));
+      }
+      setRunState("done");
+      void refreshAccount(sessionInfo.actor);
+      return;
+    }
     const batches = chunk(recipients, Math.max(1, batchSize));
     for (let i = 0; i < batches.length; i++) {
       if (cancelRef.current) {
@@ -616,33 +795,62 @@ function AirdropPage() {
       }
       if (i < batches.length - 1) await new Promise((r) => setTimeout(r, 1200));
     }
+
     setRunState("done");
     void refreshAccount(sessionInfo.actor);
   };
 
   const downloadCsv = useCallback(() => {
-    const lines = ["account,amount,token,memo"];
-    for (const r of recipients) {
-      lines.push(
-        `${r.account},${formatUnits(r.units, precision)},${sendSymbol.toUpperCase()},"${memo.replace(/"/g, '""')}"`,
-      );
+    const quotedMemo = `"${memo.replace(/"/g, '""')}"`;
+    const stamp = snapshotAt?.slice(0, 19).replace(/[:T]/g, "-") ?? "report";
+    let lines: string[];
+    let name: string;
+    if (isNft) {
+      lines = ["account,asset_id,collection,template_id,memo"];
+      for (const a of nftAssignments) {
+        lines.push(
+          `${a.account},${a.assetId},${nftCollection},${nftTemplateId ?? ""},${quotedMemo}`,
+        );
+      }
+      name = `airdrop-nft-${nftCollection || "assets"}-${stamp}.csv`;
+    } else {
+      lines = ["account,amount,token,memo"];
+      for (const r of recipients) {
+        lines.push(
+          `${r.account},${formatUnits(r.units, precision)},${sendSymbol.toUpperCase()},${quotedMemo}`,
+        );
+      }
+      name = `airdrop-${sendSymbol.toLowerCase()}-${stamp}.csv`;
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `airdrop-${sendSymbol.toLowerCase()}-${snapshotAt?.slice(0, 19).replace(/[:T]/g, "-") ?? "report"}.csv`;
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
-  }, [recipients, precision, sendSymbol, memo, snapshotAt]);
+  }, [
+    isNft,
+    nftAssignments,
+    nftCollection,
+    nftTemplateId,
+    recipients,
+    precision,
+    sendSymbol,
+    memo,
+    snapshotAt,
+  ]);
+
 
   const canRun =
     !!sessionInfo &&
-    recipients.length > 0 &&
     !hasError &&
     runState !== "running" &&
     busy === null &&
-    tokenStat !== null;
+    (isNft
+      ? nftAssignments.length > 0 && nftShortfall === 0
+      : recipients.length > 0 && tokenStat !== null);
+
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8">
@@ -684,67 +892,157 @@ function AirdropPage() {
       <div className="grid gap-6 lg:grid-cols-5">
         {/* LEFT: configuration */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Token to send */}
+          {/* What to send */}
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              1 · Token to send
+              1 · What to send
             </h2>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="col-span-1">
-                <span className="mb-1 block text-xs text-muted-foreground">Contract</span>
-                <input
-                  value={sendContract}
-                  onChange={(e) => setSendContract(e.target.value.trim().toLowerCase())}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
-                  placeholder="eosio.token"
-                />
-              </label>
-              <label className="col-span-1">
-                <span className="mb-1 block text-xs text-muted-foreground">Symbol</span>
-                <input
-                  value={sendSymbol}
-                  onChange={(e) => setSendSymbol(e.target.value.trim().toUpperCase())}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
-                  placeholder="WAX"
-                />
-              </label>
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1">
+              {(["token", "nft"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setAssetKind(k)}
+                  className={`rounded px-2 py-1 text-sm font-medium ${
+                    assetKind === k
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {k === "token" ? "Token" : "NFTs"}
+                </button>
+              ))}
             </div>
-            {tokenStat ? (
-              <p className="mt-2 text-xs text-primary">
-                ✓ {sendSymbol.toUpperCase()} · precision {tokenStat.precision} · supply{" "}
-                {tokenStat.supply}
-              </p>
-            ) : (
-              sendContract &&
-              sendSymbol && (
-                <p className="mt-2 text-xs text-destructive">Token not found on {sendContract}.</p>
-              )
-            )}
-            {walletTokens.length > 0 && (
-              <div className="mt-3">
-                <span className="mb-1 block text-xs text-muted-foreground">Your tokens</span>
-                <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
-                  {walletTokens.slice(0, 40).map((t) => (
-                    <button
-                      key={`${t.contract}:${t.symbol}`}
-                      onClick={() => {
-                        setSendContract(t.contract);
-                        setSendSymbol(t.symbol);
-                      }}
-                      className={`rounded border px-2 py-0.5 font-mono text-xs ${
-                        t.contract === sendContract && t.symbol === sendSymbol.toUpperCase()
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-background text-muted-foreground hover:text-foreground"
-                      }`}
-                      title={t.contract}
-                    >
-                      {t.symbol} {t.amount.toFixed(Math.min(t.precision, 4))}
-                    </button>
-                  ))}
-                </div>
+            {isNft ? (
+              <div className="space-y-3">
+                {!actor ? (
+                  <p className="text-xs text-muted-foreground">
+                    Connect your wallet to load the NFTs you own.
+                  </p>
+                ) : (
+                  <>
+                    <div>
+                      <span className="mb-1 block text-xs text-muted-foreground">
+                        Your collections
+                        {nftLoading === "collections" && " · loading…"}
+                      </span>
+                      <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                        {nftCollections.map((c) => (
+                          <button
+                            key={c.collection}
+                            onClick={() => setNftCollection(c.collection)}
+                            className={`rounded border px-2 py-0.5 font-mono text-xs ${
+                              c.collection === nftCollection
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border bg-background text-muted-foreground hover:text-foreground"
+                            }`}
+                            title={c.name}
+                          >
+                            {c.collection} ({c.assets})
+                          </button>
+                        ))}
+                        {nftCollections.length === 0 && nftLoading === null && (
+                          <span className="text-xs text-muted-foreground">
+                            No NFTs found in this account.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {nftCollection && (
+                      <label className="block">
+                        <span className="mb-1 block text-xs text-muted-foreground">
+                          Template to airdrop (1 NFT per recipient)
+                          {nftLoading === "templates" && " · loading…"}
+                        </span>
+                        <select
+                          value={nftTemplateId ?? ""}
+                          onChange={(e) =>
+                            setNftTemplateId(e.target.value ? Number(e.target.value) : null)
+                          }
+                          className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
+                        >
+                          <option value="">Select a template…</option>
+                          {nftTemplates.map((t) => (
+                            <option key={t.templateId} value={t.templateId}>
+                              {t.name} · #{t.templateId} · own {t.count}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {nftTemplateId !== null && (
+                      <p className="text-xs text-primary">
+                        {nftLoading === "assets"
+                          ? "Loading your NFTs…"
+                          : `✓ ${nftPool.length.toLocaleString()} NFT${nftPool.length === 1 ? "" : "s"} available to drop`}
+                      </p>
+                    )}
+                    {nftError && <p className="text-xs text-destructive">{nftError}</p>}
+                  </>
+                )}
               </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="col-span-1">
+                    <span className="mb-1 block text-xs text-muted-foreground">Contract</span>
+                    <input
+                      value={sendContract}
+                      onChange={(e) => setSendContract(e.target.value.trim().toLowerCase())}
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
+                      placeholder="eosio.token"
+                    />
+                  </label>
+                  <label className="col-span-1">
+                    <span className="mb-1 block text-xs text-muted-foreground">Symbol</span>
+                    <input
+                      value={sendSymbol}
+                      onChange={(e) => setSendSymbol(e.target.value.trim().toUpperCase())}
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
+                      placeholder="WAX"
+                    />
+                  </label>
+                </div>
+                {tokenStat ? (
+                  <p className="mt-2 text-xs text-primary">
+                    ✓ {sendSymbol.toUpperCase()} · precision {tokenStat.precision} · supply{" "}
+                    {tokenStat.supply}
+                  </p>
+                ) : (
+                  sendContract &&
+                  sendSymbol && (
+                    <p className="mt-2 text-xs text-destructive">
+                      Token not found on {sendContract}.
+                    </p>
+                  )
+                )}
+                {walletTokens.length > 0 && (
+                  <div className="mt-3">
+                    <span className="mb-1 block text-xs text-muted-foreground">Your tokens</span>
+                    <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                      {walletTokens.slice(0, 40).map((t) => (
+                        <button
+                          key={`${t.contract}:${t.symbol}`}
+                          onClick={() => {
+                            setSendContract(t.contract);
+                            setSendSymbol(t.symbol);
+                          }}
+                          className={`rounded border px-2 py-0.5 font-mono text-xs ${
+                            t.contract === sendContract && t.symbol === sendSymbol.toUpperCase()
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-background text-muted-foreground hover:text-foreground"
+                          }`}
+                          title={t.contract}
+                        >
+                          {t.symbol} {t.amount.toFixed(Math.min(t.precision, 4))}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
+
 
           {/* Snapshot source */}
           <section className="rounded-lg border border-border bg-card p-4">
@@ -836,41 +1134,51 @@ function AirdropPage() {
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               3 · Distribution
             </h2>
-            <div className="mb-3 grid grid-cols-3 gap-1 rounded-md border border-border bg-background p-1">
-              {(
-                [
-                  ["equal", "Equal split"],
-                  ["fixed", "Fixed each"],
-                  ["prorata", "Pro-rata"],
-                ] as Array<[DistributionMode, string]>
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  disabled={m === "prorata" && snapshot !== null && !snapshot.hasBalances}
-                  className={`rounded px-2 py-1 text-sm font-medium disabled:opacity-40 ${
-                    mode === m
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <label className="mb-2 block">
-              <span className="mb-1 block text-xs text-muted-foreground">
-                {mode === "fixed"
-                  ? `Amount per holder (${sendSymbol.toUpperCase()})`
-                  : `Total amount (${sendSymbol.toUpperCase()})`}
-              </span>
-              <input
-                value={amountText}
-                onChange={(e) => setAmountText(e.target.value)}
-                placeholder={mode === "fixed" ? "e.g. 5.0000" : "e.g. 10000.0000"}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
-              />
-            </label>
+            {isNft ? (
+              <p className="mb-3 rounded-md border border-border bg-background p-2 text-xs text-muted-foreground">
+                Each selected recipient receives exactly 1 NFT of the chosen template, assigned in
+                inventory order (lowest asset id first).
+              </p>
+            ) : (
+              <>
+                <div className="mb-3 grid grid-cols-3 gap-1 rounded-md border border-border bg-background p-1">
+                  {(
+                    [
+                      ["equal", "Equal split"],
+                      ["fixed", "Fixed each"],
+                      ["prorata", "Pro-rata"],
+                    ] as Array<[DistributionMode, string]>
+                  ).map(([m, label]) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      disabled={m === "prorata" && snapshot !== null && !snapshot.hasBalances}
+                      className={`rounded px-2 py-1 text-sm font-medium disabled:opacity-40 ${
+                        mode === m
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <label className="mb-2 block">
+                  <span className="mb-1 block text-xs text-muted-foreground">
+                    {mode === "fixed"
+                      ? `Amount per holder (${sendSymbol.toUpperCase()})`
+                      : `Total amount (${sendSymbol.toUpperCase()})`}
+                  </span>
+                  <input
+                    value={amountText}
+                    onChange={(e) => setAmountText(e.target.value)}
+                    placeholder={mode === "fixed" ? "e.g. 5.0000" : "e.g. 10000.0000"}
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-sm text-foreground"
+                  />
+                </label>
+              </>
+            )}
+
             <label className="mb-2 block">
               <span className="mb-1 block text-xs text-muted-foreground">Memo</span>
               <input

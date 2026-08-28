@@ -111,3 +111,35 @@ export async function transferCheese(
   if (typeof txId === "string" && txId) return txId;
   return result.request.toString();
 }
+
+/** AtomicAssets contract that owns NFT transfers on WAX. */
+export const ATOMICASSETS_CONTRACT = "atomicassets";
+
+export interface NftTransferInput {
+  from: string;
+  to: string;
+  assetIds: string[];
+  memo: string;
+}
+
+/** Sign and broadcast a batch of atomicassets::transfer actions. Returns the transaction id. */
+export async function transactNftTransfers(
+  session: Session,
+  transfers: NftTransferInput[],
+): Promise<string> {
+  const actions = transfers.map((t) => ({
+    account: ATOMICASSETS_CONTRACT,
+    name: "transfer",
+    authorization: [{ actor: session.actor.toString(), permission: session.permission.toString() }],
+    data: {
+      from: t.from,
+      to: t.to,
+      asset_ids: t.assetIds,
+      memo: t.memo,
+    },
+  }));
+  const result = await session.transact({ actions });
+  const txId = result.response?.["transaction_id"];
+  if (typeof txId === "string" && txId) return txId;
+  return result.request.toString();
+}

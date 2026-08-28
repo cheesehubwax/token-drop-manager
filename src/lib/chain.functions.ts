@@ -4,6 +4,9 @@ import {
   getAccountResources,
   getCheeseBalance,
   getExistingTokenRows,
+  getInventoryAssets,
+  getInventoryCollections,
+  getInventoryTemplates,
   getNftHolders,
   getRamPrice,
   getResourcePricing,
@@ -77,3 +80,32 @@ export const fetchExistingTokenRows = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data }) => getExistingTokenRows(data.code, data.symbol, data.accounts));
+
+export const fetchInventoryCollections = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ account: z.string().min(1).max(13) }).parse(input))
+  .handler(async ({ data }) => getInventoryCollections(data.account));
+
+export const fetchInventoryTemplates = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        account: z.string().min(1).max(13),
+        collection: z.string().min(1).max(13),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => getInventoryTemplates(data.account, data.collection));
+
+export const fetchInventoryAssets = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        account: z.string().min(1).max(13),
+        collection: z.string().min(1).max(13),
+        templateId: z.number().int().positive(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) =>
+    getInventoryAssets(data.account, data.collection, data.templateId),
+  );

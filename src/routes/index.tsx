@@ -146,6 +146,8 @@ function AirdropPage() {
   // Run state
   const [busy, setBusy] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "done">("idle");
+  const [runError, setRunError] = useState<string | null>(null);
+
   const [batchLog, setBatchLog] = useState<
     Array<{ batch: number; recipients: number; txId?: string; error?: string }>
   >([]);

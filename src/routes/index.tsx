@@ -1170,9 +1170,12 @@ function AirdropPage() {
             )}
             {sessionInfo && (
               <p className="mt-2 text-xs text-muted-foreground">
-                CPU, NET and RAM are topped up automatically with {CHEESE_SYMBOL} when needed — you
-                may be asked to sign those purchases before the first batch.
+                Every airdrop starts with a RAM purchase of at least{" "}
+                {formatCheese(MIN_RAM_PURCHASE_CHEESE)} {CHEESE_SYMBOL} (kept by your account, and
+                sellable afterwards). CPU and NET are topped up with {CHEESE_SYMBOL} only when
+                needed. You will be asked to sign these purchases before the first batch.
               </p>
+
             )}
 
             {purchaseLog.length > 0 && (

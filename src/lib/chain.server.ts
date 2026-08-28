@@ -450,8 +450,6 @@ export async function getInventoryAssets(
   return { assetIds, truncated: assetIds.length >= MAX_POOL_ASSETS };
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Token stat, balances, account resources, RAM price
 // ---------------------------------------------------------------------------

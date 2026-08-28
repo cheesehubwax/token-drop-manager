@@ -136,7 +136,6 @@ function AirdropPage() {
   const [nftLoading, setNftLoading] = useState<null | "collections" | "templates" | "assets">(null);
   const [nftError, setNftError] = useState<string | null>(null);
 
-
   // Snapshot state
   const [snapshotMode, setSnapshotMode] = useState<"token" | "nft">("token");
   const [snapContract, setSnapContract] = useState("");
@@ -345,8 +344,6 @@ function AirdropPage() {
       cancelled = true;
     };
   }, [isNft, actor, nftCollection, nftTemplateId]);
-
-
 
   const connect = async () => {
     if (!walletRef.current) return;
@@ -589,10 +586,7 @@ function AirdropPage() {
   const cpuShortUs =
     resources && recipientCount > 0 ? Math.max(0, cpuNeededUs - resources.cpuAvailableUs) : 0;
   const ramShortBytes =
-    resources && recipientCount > 0
-      ? Math.max(0, ramNeededBytes - resources.ramAvailableBytes)
-      : 0;
-
+    resources && recipientCount > 0 ? Math.max(0, ramNeededBytes - resources.ramAvailableBytes) : 0;
 
   const suggestedCpuCheese = useMemo(
     () =>
@@ -841,7 +835,6 @@ function AirdropPage() {
     snapshotAt,
   ]);
 
-
   const canRun =
     !!sessionInfo &&
     !hasError &&
@@ -850,7 +843,6 @@ function AirdropPage() {
     (isNft
       ? nftAssignments.length > 0 && nftShortfall === 0
       : recipients.length > 0 && tokenStat !== null);
-
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8">
@@ -1042,7 +1034,6 @@ function AirdropPage() {
               </>
             )}
           </section>
-
 
           {/* Snapshot source */}
           <section className="rounded-lg border border-border bg-card p-4">
@@ -1414,8 +1405,8 @@ function AirdropPage() {
                   ? `${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL}`
                   : "unavailable"}{" "}
                 — every airdrop buys at least {formatCheese(MIN_RAM_PURCHASE_CHEESE)}{" "}
-                {CHEESE_SYMBOL} of RAM. Don't worry the excess RAM stays in your account
-                and can be sold again afterwards.
+                {CHEESE_SYMBOL} of RAM. Don't worry the excess RAM stays in your account and can be
+                sold again afterwards.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 CPU/NET is topped up only if you are short
@@ -1452,8 +1443,7 @@ function AirdropPage() {
                   disabled={!canRun}
                   className="rounded-md bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-40"
                 >
-                  AIRDROP{" "}
-                  {recipientCount > 0 && `(${recipientCount.toLocaleString()} recipients)`}
+                  AIRDROP {recipientCount > 0 && `(${recipientCount.toLocaleString()} recipients)`}
                 </button>
               ) : (
                 <button

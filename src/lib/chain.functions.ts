@@ -106,6 +106,4 @@ export const fetchInventoryAssets = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data }) =>
-    getInventoryAssets(data.account, data.collection, data.templateId),
-  );
+  .handler(async ({ data }) => getInventoryAssets(data.account, data.collection, data.templateId));

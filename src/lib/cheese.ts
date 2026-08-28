@@ -24,7 +24,6 @@ export const DEFAULT_CPU_PERCENT = 80;
  */
 export const MIN_RAM_PURCHASE_CHEESE = 10;
 
-
 /**
  * Memo for a CPU/NET powerup.
  * `<account>` uses the contract default split; `cpu:<n>,net:<m>:<account>`

@@ -29,7 +29,6 @@ import {
   CHEESE_SYMBOL,
   DEFAULT_CPU_PERCENT,
   MIN_RAM_PURCHASE_CHEESE,
-
   powerupMemo,
   ramMemo,
   txLink,
@@ -467,11 +466,8 @@ function AirdropPage() {
   const requiredRamCheese = useMemo(() => {
     if (!pricing) return null;
     const needed = ramShortBytes > 0 ? cheeseForBytes(ramShortBytes, pricing) : 0;
-    return ceilCheese(
-      Math.max(MIN_RAM_PURCHASE_CHEESE, needed ?? 0, pricing.ram.minCheese),
-    );
+    return ceilCheese(Math.max(MIN_RAM_PURCHASE_CHEESE, needed ?? 0, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
-
 
   /** Current CHEESE prices: how much 1 ms of CPU / 1 KB of RAM costs right now. */
   const cheesePerCpuMs = useMemo(() => {
@@ -584,7 +580,6 @@ function AirdropPage() {
       );
       return;
     }
-
 
     setRunState("running");
     setBatchLog([]);
@@ -1119,7 +1114,6 @@ function AirdropPage() {
 
             {runError && <p className="mb-3 text-xs text-destructive">✕ {runError}</p>}
 
-
             {warnings.filter((w) => w.level === "error").length > 0 && (
               <div className="mb-3 space-y-1">
                 {warnings
@@ -1175,7 +1169,6 @@ function AirdropPage() {
                 sellable afterwards). CPU and NET are topped up with {CHEESE_SYMBOL} only when
                 needed. You will be asked to sign these purchases before the first batch.
               </p>
-
             )}
 
             {purchaseLog.length > 0 && (

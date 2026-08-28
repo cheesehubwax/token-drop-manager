@@ -395,10 +395,18 @@ export async function getInventoryTemplates(
       for (const t of res.data ?? []) {
         const id = t.template_id ? parseInt(t.template_id, 10) : NaN;
         if (!Number.isFinite(id)) continue;
-        const raw = t.immutable_data?.["name"];
+        const data = t.immutable_data ?? {};
+        let label = "";
+        for (const key of ["name", "Name", "title", "card_name", "cardname"]) {
+          const raw = data[key];
+          if (typeof raw === "string" && raw.trim()) {
+            label = raw.trim();
+            break;
+          }
+        }
         meta.set(id, {
           schema: t.schema?.schema_name ?? "",
-          name: typeof raw === "string" && raw ? raw : `#${id}`,
+          name: label || `#${id}`,
         });
       }
     } catch {

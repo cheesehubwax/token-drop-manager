@@ -1,0 +1,44 @@
+# Add NFT airdrops
+
+Extend the tool so a drop can send NFTs from your own inventory instead of a token, reusing the existing holder snapshot, selection, batching, and automatic CHEESE resource handling.
+
+## What you'll see
+
+**Section 1 becomes "What to send"** with a Token / NFTs toggle.
+
+In NFTs mode:
+- Your wallet's AtomicAssets inventory loads after connecting (collection, schema, template, name, count).
+- Filter the pool by collection, then optionally schema and template.
+- A live pool counter: "142 NFTs selected in pool".
+
+**Section 3 (Distribution) in NFT mode** replaces the token amount with:
+- **NFTs per recipient** (default 1) — takes that many from the pool for each recipient, in pool order.
+- **One template each** — pick a template; every recipient gets exactly one NFT of it.
+- **Randomize** checkbox — shuffles the pool before assigning (with a re-shuffle button so you can preview the assignment).
+- Memo works exactly as today.
+
+**Pool must cover everyone.** If the pool has fewer NFTs than selected recipients need, the Airdrop button stays disabled with a clear message telling you how many NFTs short you are, so you can deselect recipients, widen the filter, or lower NFTs-per-recipient. Nothing is ever partially sent.
+
+**Sections 2, 4, 5 unchanged**: same holder sources (token holders or NFT collection holders), Top 10/50/100, exclusions, min-weight filter, summary, CHEESE cost lines, and the required 10 CHEESE minimum RAM purchase before the first batch.
+
+**Assignment preview** in the recipients list: each selected account shows the count of NFTs it will receive, and the CSV report gains an `asset_ids` column.
+
+## Technical notes
+
+Chain layer (`src/lib/chain.server.ts` + `src/lib/chain.functions.ts`)
+- `getInventoryAssets(account, { collection?, schema?, templateId? })` — paginates `/atomicassets/v1/assets?owner=...` through the existing `ATOMIC_ENDPOINTS` failover helper, returning `{ assetId, collection, schema, templateId, name }[]` plus a truncation flag.
+- `getInventoryCollections(account)` — derived from `/atomicassets/v1/accounts/{account}` for the collection/schema/template dropdowns.
+- Exposed as `fetchInventoryAssets` / `fetchInventoryCollections` server functions with Zod validation, matching the existing pattern.
+
+Allocation (`src/lib/airdrop.ts`)
+- New `assignAssets(pool, accounts, { perRecipient | templateId, shuffle, seed })` returning `{ account, assetIds }[]` and a `shortfall` count. Seeded shuffle so the preview matches what gets signed.
+- `estimateResources` gains an NFT branch: one `atomicassets::transfer` action per recipient (asset IDs grouped per recipient), conservative per-asset CPU/NET constants, and RAM sized per transferred asset instead of per token balance row. The existing token-row lookup is skipped in NFT mode.
+
+Wallet (`src/lib/wallet.ts`)
+- `transactNftTransfers(session, groups)` builds `atomicassets::transfer` actions with `{ from, to, asset_ids, memo }`, one action per recipient, batched by the existing batch-size control. Same signing, transaction-link, and retry surface as token transfers.
+
+Page (`src/routes/index.tsx`)
+- New `assetKind: "token" | "nft"` state driving sections 1 and 3; token path untouched.
+- NFT pool/filter/assignment state, `canRun` extended with the pool-coverage rule, `runAirdrop` branching to the NFT transfer path after the same CHEESE resource step.
+
+No smart contract, no schema changes, no scheduling.

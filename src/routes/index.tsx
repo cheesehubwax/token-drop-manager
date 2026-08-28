@@ -28,6 +28,7 @@ import {
   CHEESE_RAM_CONTRACT,
   CHEESE_SYMBOL,
   DEFAULT_CPU_PERCENT,
+  MIN_RAM_PURCHASE_CHEESE,
   powerupMemo,
   ramMemo,
   txLink,
@@ -144,6 +145,8 @@ function AirdropPage() {
   // Run state
   const [busy, setBusy] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "done">("idle");
+  const [runError, setRunError] = useState<string | null>(null);
+
   const [batchLog, setBatchLog] = useState<
     Array<{ batch: number; recipients: number; txId?: string; error?: string }>
   >([]);
@@ -456,11 +459,14 @@ function AirdropPage() {
         : null,
     [pricing, cpuShortUs, calibration, cpuPercent],
   );
-  const suggestedRamCheese = useMemo(() => {
-    if (!pricing || ramShortBytes <= 0) return null;
-    const needed = cheeseForBytes(ramShortBytes, pricing);
-    if (needed === null) return null;
-    return ceilCheese(Math.max(needed, pricing.ram.minCheese));
+  /**
+   * RAM is always purchased: at least MIN_RAM_PURCHASE_CHEESE, more when the
+   * drop's estimated RAM need is larger. Null only when pricing is unavailable.
+   */
+  const requiredRamCheese = useMemo(() => {
+    if (!pricing) return null;
+    const needed = ramShortBytes > 0 ? cheeseForBytes(ramShortBytes, pricing) : 0;
+    return ceilCheese(Math.max(MIN_RAM_PURCHASE_CHEESE, needed ?? 0, pricing.ram.minCheese));
   }, [pricing, ramShortBytes]);
 
   /** Current CHEESE prices: how much 1 ms of CPU / 1 KB of RAM costs right now. */
@@ -535,25 +541,44 @@ function AirdropPage() {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
     setBatchLog([]);
     setPurchaseLog([]);
+    setRunError(null);
 
-    // Resources are handled for the user: buy exactly what the drop is short of,
-    // with CHEESE, as separate transactions before the first batch.
+    // Every airdrop buys RAM with CHEESE first (minimum MIN_RAM_PURCHASE_CHEESE,
+    // more if the drop needs it). CPU/NET is topped up only when short.
     if (pricing) {
-      if (suggestedCpuCheese && (cheeseBalance === null || cheeseBalance >= suggestedCpuCheese)) {
+      if (requiredRamCheese === null) {
+        setRunError(
+          `${CHEESE_SYMBOL} resource pricing is unavailable right now, so the required RAM purchase cannot be made. Try again in a moment.`,
+        );
+        return;
+      }
+      if (!pricing.ram.enabled) {
+        setRunError(
+          `The ${CHEESE_RAM_CONTRACT} contract has RAM buying disabled right now, so the required RAM purchase cannot be made. Try again later.`,
+        );
+        return;
+      }
+      const totalNeeded = requiredRamCheese + (suggestedCpuCheese ?? 0);
+      if (cheeseBalance !== null && cheeseBalance < totalNeeded) {
+        setRunError(
+          `This airdrop requires ${formatCheese(totalNeeded)} ${CHEESE_SYMBOL} of resources (including the ${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL} RAM purchase), but your balance is ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`,
+        );
+        return;
+      }
+      if (suggestedCpuCheese) {
         const ok = await buyWithCheese("cpu", [suggestedCpuCheese]);
         if (!ok) return;
       }
-      if (
-        suggestedRamCheese &&
-        pricing.ram.enabled &&
-        (cheeseBalance === null || cheeseBalance >= suggestedRamCheese)
-      ) {
-        const ok = await buyWithCheese(
-          "ram",
-          splitPurchases(suggestedRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
-        );
-        if (!ok) return;
-      }
+      const ok = await buyWithCheese(
+        "ram",
+        splitPurchases(requiredRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
+      );
+      if (!ok) return;
+    } else {
+      setRunError(
+        `${CHEESE_SYMBOL} resource pricing is unavailable right now, so the required RAM purchase cannot be made. Try again in a moment.`,
+      );
+      return;
     }
 
     setRunState("running");
@@ -1064,16 +1089,30 @@ function AirdropPage() {
                   </dd>
                 </div>
               </dl>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Only the shortfall is actually purchased
-                {suggestedCpuCheese !== null || suggestedRamCheese !== null
-                  ? ` — about ${formatCheese((suggestedCpuCheese ?? 0) + (suggestedRamCheese ?? 0))} ${CHEESE_SYMBOL} right now.`
-                  : " — your account currently has enough CPU, NET and RAM."}
+              <p className="mt-2 text-xs text-foreground">
+                RAM purchase (required):{" "}
+                {requiredRamCheese !== null
+                  ? `${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL}`
+                  : "unavailable"}{" "}
+                — every airdrop buys at least {formatCheese(MIN_RAM_PURCHASE_CHEESE)}{" "}
+                {CHEESE_SYMBOL} of RAM. The RAM stays in your account and can be sold again
+                afterwards.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                CPU/NET is topped up only if you are short
+                {suggestedCpuCheese !== null
+                  ? ` — about ${formatCheese(suggestedCpuCheese)} ${CHEESE_SYMBOL} right now.`
+                  : " — your account currently has enough CPU and NET."}
+                {requiredRamCheese !== null
+                  ? ` Total to sign: ~${formatCheese(requiredRamCheese + (suggestedCpuCheese ?? 0))} ${CHEESE_SYMBOL}.`
+                  : ""}
                 {cheeseBalance !== null
                   ? ` Your balance: ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`
                   : ""}
               </p>
             </div>
+
+            {runError && <p className="mb-3 text-xs text-destructive">✕ {runError}</p>}
 
             {warnings.filter((w) => w.level === "error").length > 0 && (
               <div className="mb-3 space-y-1">
@@ -1125,8 +1164,10 @@ function AirdropPage() {
             )}
             {sessionInfo && (
               <p className="mt-2 text-xs text-muted-foreground">
-                CPU, NET and RAM are topped up automatically with {CHEESE_SYMBOL} when needed — you
-                may be asked to sign those purchases before the first batch.
+                Every airdrop starts with a RAM purchase of at least{" "}
+                {formatCheese(MIN_RAM_PURCHASE_CHEESE)} {CHEESE_SYMBOL} (kept by your account, and
+                sellable afterwards). CPU and NET are topped up with {CHEESE_SYMBOL} only when
+                needed. You will be asked to sign these purchases before the first batch.
               </p>
             )}
 

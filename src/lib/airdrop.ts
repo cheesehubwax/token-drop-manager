@@ -219,3 +219,54 @@ export function resourceWarnings(
   }
   return warnings;
 }
+
+// ---------------------------------------------------------------------------
+// NFT airdrops (one asset per recipient)
+// ---------------------------------------------------------------------------
+
+export interface NftAssignment {
+  account: string;
+  assetId: string;
+}
+
+/**
+ * Assign one asset from the pool to each account, in pool order.
+ * `shortfall` is how many more assets are needed to cover every account.
+ */
+export function assignAssets(
+  pool: string[],
+  accounts: string[],
+): { assignments: NftAssignment[]; shortfall: number } {
+  const assignments: NftAssignment[] = [];
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i];
+    const assetId = pool[i];
+    if (account === undefined || assetId === undefined) break;
+    assignments.push({ account, assetId });
+  }
+  return { assignments, shortfall: Math.max(0, accounts.length - pool.length) };
+}
+
+/** RAM bytes an incoming NFT costs the sender (AtomicAssets asset row, conservative). */
+export const RAM_BYTES_PER_NFT = 200;
+const CPU_US_PER_NFT_TRANSFER = 2600;
+const NET_BYTES_PER_NFT_TRANSFER = 180;
+
+/** Resource estimate for an NFT airdrop: one transfer action per recipient. */
+export function estimateNftResources(
+  recipientCount: number,
+  batchSize: number,
+  waxPerKb: number,
+): ResourceEstimate {
+  const txCount = Math.max(1, Math.ceil(recipientCount / batchSize));
+  const cpuPerTxUs = batchSize * CPU_US_PER_NFT_TRANSFER + CPU_US_TX_OVERHEAD;
+  const netPerTxBytes = batchSize * NET_BYTES_PER_NFT_TRANSFER + NET_BYTES_TX_OVERHEAD;
+  return {
+    cpuPerTxUs,
+    netPerTxBytes,
+    totalCpuUs: cpuPerTxUs * txCount,
+    maxNewRows: recipientCount,
+    maxRamCostWax: ((recipientCount * RAM_BYTES_PER_NFT) / 1024) * waxPerKb,
+    txCount,
+  };
+}

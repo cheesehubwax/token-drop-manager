@@ -541,26 +541,46 @@ function AirdropPage() {
     if (!walletRef.current || !sessionInfo || recipients.length === 0) return;
     setBatchLog([]);
     setPurchaseLog([]);
+    setRunError(null);
 
-    // Resources are handled for the user: buy exactly what the drop is short of,
-    // with CHEESE, as separate transactions before the first batch.
+    // Every airdrop buys RAM with CHEESE first (minimum MIN_RAM_PURCHASE_CHEESE,
+    // more if the drop needs it). CPU/NET is topped up only when short.
     if (pricing) {
-      if (suggestedCpuCheese && (cheeseBalance === null || cheeseBalance >= suggestedCpuCheese)) {
+      if (requiredRamCheese === null) {
+        setRunError(
+          `${CHEESE_SYMBOL} resource pricing is unavailable right now, so the required RAM purchase cannot be made. Try again in a moment.`,
+        );
+        return;
+      }
+      if (!pricing.ram.enabled) {
+        setRunError(
+          `The ${CHEESE_RAM_CONTRACT} contract has RAM buying disabled right now, so the required RAM purchase cannot be made. Try again later.`,
+        );
+        return;
+      }
+      const totalNeeded = requiredRamCheese + (suggestedCpuCheese ?? 0);
+      if (cheeseBalance !== null && cheeseBalance < totalNeeded) {
+        setRunError(
+          `This airdrop requires ${formatCheese(totalNeeded)} ${CHEESE_SYMBOL} of resources (including the ${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL} RAM purchase), but your balance is ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`,
+        );
+        return;
+      }
+      if (suggestedCpuCheese) {
         const ok = await buyWithCheese("cpu", [suggestedCpuCheese]);
         if (!ok) return;
       }
-      if (
-        suggestedRamCheese &&
-        pricing.ram.enabled &&
-        (cheeseBalance === null || cheeseBalance >= suggestedRamCheese)
-      ) {
-        const ok = await buyWithCheese(
-          "ram",
-          splitPurchases(suggestedRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
-        );
-        if (!ok) return;
-      }
+      const ok = await buyWithCheese(
+        "ram",
+        splitPurchases(requiredRamCheese, pricing.ram.minCheese, pricing.ram.maxCheese),
+      );
+      if (!ok) return;
+    } else {
+      setRunError(
+        `${CHEESE_SYMBOL} resource pricing is unavailable right now, so the required RAM purchase cannot be made. Try again in a moment.`,
+      );
+      return;
     }
+
 
     setRunState("running");
     setBatchLog([]);

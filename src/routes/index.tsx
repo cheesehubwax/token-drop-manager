@@ -1094,16 +1094,31 @@ function AirdropPage() {
                   </dd>
                 </div>
               </dl>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Only the shortfall is actually purchased
-                {suggestedCpuCheese !== null || suggestedRamCheese !== null
-                  ? ` — about ${formatCheese((suggestedCpuCheese ?? 0) + (suggestedRamCheese ?? 0))} ${CHEESE_SYMBOL} right now.`
-                  : " — your account currently has enough CPU, NET and RAM."}
+              <p className="mt-2 text-xs text-foreground">
+                RAM purchase (required):{" "}
+                {requiredRamCheese !== null
+                  ? `${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL}`
+                  : "unavailable"}{" "}
+                — every airdrop buys at least {formatCheese(MIN_RAM_PURCHASE_CHEESE)}{" "}
+                {CHEESE_SYMBOL} of RAM. The RAM stays in your account and can be sold again
+                afterwards.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                CPU/NET is topped up only if you are short
+                {suggestedCpuCheese !== null
+                  ? ` — about ${formatCheese(suggestedCpuCheese)} ${CHEESE_SYMBOL} right now.`
+                  : " — your account currently has enough CPU and NET."}
+                {requiredRamCheese !== null
+                  ? ` Total to sign: ~${formatCheese(requiredRamCheese + (suggestedCpuCheese ?? 0))} ${CHEESE_SYMBOL}.`
+                  : ""}
                 {cheeseBalance !== null
                   ? ` Your balance: ${formatCheese(cheeseBalance)} ${CHEESE_SYMBOL}.`
                   : ""}
               </p>
             </div>
+
+            {runError && <p className="mb-3 text-xs text-destructive">✕ {runError}</p>}
+
 
             {warnings.filter((w) => w.level === "error").length > 0 && (
               <div className="mb-3 space-y-1">

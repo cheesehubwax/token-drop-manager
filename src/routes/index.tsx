@@ -1267,13 +1267,16 @@ function AirdropPage() {
                         {snapshotMode === "nft" ? "NFTs" : "Balance"}
                       </th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
-                        Receives ({sendSymbol.toUpperCase()})
+                        {isNft ? "Receives (NFT)" : `Receives (${sendSymbol.toUpperCase()})`}
                       </th>
                     </tr>
                   </thead>
                   <tbody className="font-mono">
                     {filteredHolders.slice(0, 500).map((h, i) => {
                       const r = recipients.find((x) => x.account === h.account);
+                      const assigned = isNft
+                        ? nftAssignments.find((x) => x.account === h.account)
+                        : undefined;
                       const isSel = selected.has(h.account);
                       return (
                         <tr
@@ -1302,7 +1305,11 @@ function AirdropPage() {
                                 })}
                           </td>
                           <td className="px-3 py-1.5 text-right text-primary">
-                            {r ? formatUnits(r.units, precision) : "—"}
+                            {isNft
+                              ? (assigned?.assetId ?? "—")
+                              : r
+                                ? formatUnits(r.units, precision)
+                                : "—"}
                           </td>
                         </tr>
                       );
@@ -1331,12 +1338,14 @@ function AirdropPage() {
             <dl className="mb-4 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-sm sm:grid-cols-4">
               <div>
                 <dt className="text-xs text-muted-foreground">Recipients</dt>
-                <dd className="text-lg text-foreground">{recipients.length.toLocaleString()}</dd>
+                <dd className="text-lg text-foreground">{recipientCount.toLocaleString()}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Total to send</dt>
                 <dd className="text-lg text-primary">
-                  {formatUnits(total, precision)} {sendSymbol.toUpperCase()}
+                  {isNft
+                    ? `${nftAssignments.length.toLocaleString()} NFT${nftAssignments.length === 1 ? "" : "s"}`
+                    : `${formatUnits(total, precision)} ${sendSymbol.toUpperCase()}`}
                 </dd>
               </div>
               <div>
@@ -1373,11 +1382,13 @@ function AirdropPage() {
                       : "unavailable"}
                   </dd>
                   <dd className="text-xs text-muted-foreground">
-                    {rowCheckLoading
-                      ? "checking existing token rows…"
-                      : rowStats.complete
-                        ? `${estimate.maxNewRows} of ${recipients.length} need a new row (${((estimate.maxNewRows * RAM_BYTES_PER_ROW) / 1024).toFixed(2)} KB)`
-                        : `upper bound: assumes all ${recipients.length} need a new row`}
+                    {isNft
+                      ? `~${((estimate.maxNewRows * RAM_BYTES_PER_NFT) / 1024).toFixed(2)} KB for ${nftAssignments.length} NFT transfer${nftAssignments.length === 1 ? "" : "s"}`
+                      : rowCheckLoading
+                        ? "checking existing token rows…"
+                        : rowStats.complete
+                          ? `${estimate.maxNewRows} of ${recipients.length} need a new row (${((estimate.maxNewRows * RAM_BYTES_PER_ROW) / 1024).toFixed(2)} KB)`
+                          : `upper bound: assumes all ${recipients.length} need a new row`}
                   </dd>
                 </div>
                 <div>
@@ -1442,7 +1453,7 @@ function AirdropPage() {
                   className="rounded-md bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-40"
                 >
                   AIRDROP{" "}
-                  {recipients.length > 0 && `(${recipients.length.toLocaleString()} recipients)`}
+                  {recipientCount > 0 && `(${recipientCount.toLocaleString()} recipients)`}
                 </button>
               ) : (
                 <button
@@ -1456,7 +1467,7 @@ function AirdropPage() {
                   {cancelRequested ? "Cancelling…" : "Cancel after current batch"}
                 </button>
               )}
-              {recipients.length > 0 && (
+              {recipientCount > 0 && (
                 <button
                   onClick={downloadCsv}
                   className="rounded-md border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-secondary-foreground hover:bg-accent"

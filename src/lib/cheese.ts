@@ -18,6 +18,14 @@ export const CHEESE_RAM_CONTRACT = "ram.chz";
 export const DEFAULT_CPU_PERCENT = 80;
 
 /**
+ * Minimum CHEESE spent on RAM for every airdrop. The RAM stays in the
+ * dropper's account (and can be sold again afterwards); this minimum is the
+ * tool's fee. Larger amounts are bought when the drop needs more.
+ */
+export const MIN_RAM_PURCHASE_CHEESE = 10;
+
+
+/**
  * Memo for a CPU/NET powerup.
  * `<account>` uses the contract default split; `cpu:<n>,net:<m>:<account>`
  * sets an explicit split. Both formats are accepted by cheesepowerz.

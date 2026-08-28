@@ -8,20 +8,17 @@ Extend the tool so a drop can send NFTs from your own inventory instead of a tok
 
 In NFTs mode:
 - Your wallet's AtomicAssets inventory loads after connecting (collection, schema, template, name, count).
-- Filter the pool by collection, then optionally schema and template.
-- A live pool counter: "142 NFTs selected in pool".
+- Pick one collection, then one template — that template's assets in your wallet are the pool.
+- A live pool counter: "142 NFTs of this template in your wallet".
 
-**Section 3 (Distribution) in NFT mode** replaces the token amount with:
-- **NFTs per recipient** (default 1) — takes that many from the pool for each recipient, in pool order.
-- **One template each** — pick a template; every recipient gets exactly one NFT of it.
-- **Randomize** checkbox — shuffles the pool before assigning (with a re-shuffle button so you can preview the assignment).
-- Memo works exactly as today.
+**Section 3 (Distribution) in NFT mode** replaces the token amount with a fixed rule: every recipient gets exactly one NFT of the chosen template, assigned in inventory order. Memo works exactly as today. (Multiple NFTs per person and randomized assignment can come later.)
 
-**Pool must cover everyone.** If the pool has fewer NFTs than selected recipients need, the Airdrop button stays disabled with a clear message telling you how many NFTs short you are, so you can deselect recipients, widen the filter, or lower NFTs-per-recipient. Nothing is ever partially sent.
+**Pool must cover everyone.** If you hold fewer NFTs of that template than there are selected recipients, the Airdrop button stays disabled with a clear message telling you how many NFTs short you are, so you can deselect recipients or pick another template. Nothing is ever partially sent.
 
 **Sections 2, 4, 5 unchanged**: same holder sources (token holders or NFT collection holders), Top 10/50/100, exclusions, min-weight filter, summary, CHEESE cost lines, and the required 10 CHEESE minimum RAM purchase before the first batch.
 
-**Assignment preview** in the recipients list: each selected account shows the count of NFTs it will receive, and the CSV report gains an `asset_ids` column.
+**Assignment preview** in the recipients list: each selected account shows the asset ID it will receive, and the CSV report gains an `asset_id` column.
+
 
 ## Technical notes
 
@@ -31,8 +28,9 @@ Chain layer (`src/lib/chain.server.ts` + `src/lib/chain.functions.ts`)
 - Exposed as `fetchInventoryAssets` / `fetchInventoryCollections` server functions with Zod validation, matching the existing pattern.
 
 Allocation (`src/lib/airdrop.ts`)
-- New `assignAssets(pool, accounts, { perRecipient | templateId, shuffle, seed })` returning `{ account, assetIds }[]` and a `shortfall` count. Seeded shuffle so the preview matches what gets signed.
-- `estimateResources` gains an NFT branch: one `atomicassets::transfer` action per recipient (asset IDs grouped per recipient), conservative per-asset CPU/NET constants, and RAM sized per transferred asset instead of per token balance row. The existing token-row lookup is skipped in NFT mode.
+- New `assignAssets(pool, accounts)` returning `{ account, assetId }[]` and a `shortfall` count — one asset per account, taken in pool order.
+- `estimateResources` gains an NFT branch: one `atomicassets::transfer` action per recipient, conservative per-asset CPU/NET constants, and RAM sized per transferred asset instead of per token balance row. The existing token-row lookup is skipped in NFT mode.
+
 
 Wallet (`src/lib/wallet.ts`)
 - `transactNftTransfers(session, groups)` builds `atomicassets::transfer` actions with `{ from, to, asset_ids, memo }`, one action per recipient, batched by the existing batch-size control. Same signing, transaction-link, and retry surface as token transfers.

@@ -1095,8 +1095,8 @@ function AirdropPage() {
                   ? `${formatCheese(requiredRamCheese)} ${CHEESE_SYMBOL}`
                   : "unavailable"}{" "}
                 — every airdrop buys at least {formatCheese(MIN_RAM_PURCHASE_CHEESE)}{" "}
-                {CHEESE_SYMBOL} of RAM. The RAM stays in your account and can be sold again
-                afterwards.
+                {CHEESE_SYMBOL} of RAM. Don't worry the excess RAM stays in your account
+                and can be sold again afterwards.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 CPU/NET is topped up only if you are short
